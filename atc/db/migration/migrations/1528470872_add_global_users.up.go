@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"strings"
 
-	. "github.com/concourse/concourse/atc/db/migration/voyager/migrations"
 	"github.com/mitchellh/mapstructure"
 )
 

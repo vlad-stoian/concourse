@@ -8,16 +8,16 @@ import (
 	"github.com/concourse/concourse/atc/db/migration/voyager/runner"
 )
 
-type TestGoMigrationsRunner struct {
+type GoMigrationsRunner struct {
 	*sql.DB
 	encryption.Strategy
 }
 
 func NewMigrationsRunner(db *sql.DB, es encryption.Strategy) runner.MigrationsRunner {
-	return &TestGoMigrationsRunner{db, es}
+	return &GoMigrationsRunner{db, es}
 }
 
-func (runner *TestGoMigrationsRunner) Run(name string) error {
+func (runner *GoMigrationsRunner) Run(name string) error {
 
 	res := reflect.ValueOf(runner).MethodByName(name).Call(nil)
 

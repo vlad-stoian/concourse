@@ -4,8 +4,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"strings"
-
-	. "github.com/concourse/concourse/atc/db/migration/voyager/migrations"
 )
 
 type GroupConfig struct {

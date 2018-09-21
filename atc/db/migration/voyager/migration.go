@@ -10,7 +10,7 @@ import (
 	"code.cloudfoundry.org/lager"
 	"github.com/concourse/concourse/atc/db/encryption"
 	"github.com/concourse/concourse/atc/db/lock"
-	"github.com/concourse/concourse/atc/db/migration/voyager/migrations"
+	"github.com/concourse/concourse/atc/db/migration/migrations"
 	multierror "github.com/hashicorp/go-multierror"
 	_ "github.com/lib/pq"
 )
@@ -182,7 +182,8 @@ func (m *migrator) runMigration(migration migration) error {
 
 	switch migration.Strategy {
 	case GoMigration:
-		err = migrations.NewGoMigrationsRunner(m.db, m.strategy).Run(migration.Name)
+		migrationsRunner := migrations.NewMigrationsRunner(m.db, m.strategy)
+		err = migrationsRunner.Run(migration.Name)
 		if err != nil {
 			return m.recordMigrationFailure(migration, err, false)
 		}

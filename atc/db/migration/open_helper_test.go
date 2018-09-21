@@ -2,14 +2,22 @@ package migration_test
 
 import (
 	"database/sql"
+	"io/ioutil"
+	"math/rand"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/concourse/concourse/atc/db/encryption"
 	"github.com/concourse/concourse/atc/db/lock"
 	"github.com/concourse/concourse/atc/db/migration"
+	"github.com/concourse/concourse/atc/db/migration/voyager"
 	"github.com/concourse/concourse/atc/db/migration/voyager/voyagerfakes"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
+
+const initialSchemaVersion = 1510262030
 
 var _ = Describe("OpenHelper", func() {
 	var (
@@ -18,7 +26,7 @@ var _ = Describe("OpenHelper", func() {
 		lockDB      *sql.DB
 		lockFactory lock.LockFactory
 		strategy    encryption.Strategy
-		bindata     *voyagerfakes.FakeSource
+		source      *voyagerfakes.FakeSource
 		openHelper  *migration.OpenHelper
 	)
 
@@ -33,8 +41,8 @@ var _ = Describe("OpenHelper", func() {
 		strategy = encryption.NewNoEncryption()
 		openHelper = migration.NewOpenHelper("postgres", postgresRunner.DataSourceName(), lockFactory, strategy)
 
-		bindata = new(voyagerfakes.FakeSource)
-		bindata.AssetStub = asset
+		source = new(voyagerfakes.FakeSource)
+		source.AssetStub = asset
 	})
 
 	AfterEach(func() {
@@ -66,7 +74,6 @@ var _ = Describe("OpenHelper", func() {
 		})
 
 		It("Forces schema migration version to a known first version if migration_version is 189", func() {
-			var initialSchemaVersion = 1510262030
 			SetupMigrationVersionTableToExistAtVersion(db, 189)
 
 			SetupSchemaFromFile(db, "migrations/1510262030_initial_schema.up.sql")
@@ -83,7 +90,7 @@ var _ = Describe("OpenHelper", func() {
 
 		It("Runs migrator if migration_version table does not exist", func() {
 
-			bindata.AssetNamesReturns([]string{
+			source.AssetNamesReturns([]string{
 				"1510262030_initial_schema.up.sql",
 			})
 			err = openHelper.MigrateToVersion(initialSchemaVersion)
@@ -120,4 +127,61 @@ func ExpectDatabaseVersionToEqual(db *sql.DB, version int, table string) {
 	err := db.QueryRow(query).Scan(&dbVersion)
 	Expect(err).NotTo(HaveOccurred())
 	Expect(dbVersion).To(Equal(version))
+}
+
+func SetupMigrationsHistoryTableToExistAtVersion(db *sql.DB, version int) {
+	_, err := db.Exec(`CREATE TABLE migrations_history(version bigint, tstamp timestamp with time zone, direction varchar, status varchar, dirty boolean)`)
+	Expect(err).NotTo(HaveOccurred())
+
+	_, err = db.Exec(`INSERT INTO migrations_history(version, tstamp, direction, status, dirty) VALUES($1, current_timestamp, 'up', 'passed', false)`, version)
+	Expect(err).NotTo(HaveOccurred())
+}
+
+func SetupSchemaMigrationsTable(db *sql.DB, version int, dirty bool) {
+	_, err := db.Exec("CREATE TABLE IF NOT EXISTS schema_migrations (version bigint, dirty boolean)")
+	Expect(err).NotTo(HaveOccurred())
+	_, err = db.Exec("INSERT INTO schema_migrations (version, dirty) VALUES ($1, $2)", version, dirty)
+	Expect(err).NotTo(HaveOccurred())
+}
+
+func SetupSchemaFromFile(db *sql.DB, path string) {
+	migrations, err := ioutil.ReadFile(path)
+	Expect(err).NotTo(HaveOccurred())
+
+	for _, migration := range strings.Split(string(migrations), ";") {
+		_, err = db.Exec(migration)
+		Expect(err).NotTo(HaveOccurred())
+	}
+}
+
+func ExpectDatabaseMigrationVersionToEqual(migrator voyager.Migrator, expectedVersion int) {
+	var dbVersion int
+	dbVersion, err := migrator.CurrentVersion()
+	Expect(err).NotTo(HaveOccurred())
+	Expect(dbVersion).To(Equal(expectedVersion))
+}
+
+func ExpectToBeAbleToInsertData(dbConn *sql.DB) {
+	rand.Seed(time.Now().UnixNano())
+
+	teamID := rand.Intn(10000)
+	_, err := dbConn.Exec("INSERT INTO teams(id, name) VALUES ($1, $2)", teamID, strconv.Itoa(teamID))
+	Expect(err).NotTo(HaveOccurred())
+
+	pipelineID := rand.Intn(10000)
+	_, err = dbConn.Exec("INSERT INTO pipelines(id, team_id, name) VALUES ($1, $2, $3)", pipelineID, teamID, strconv.Itoa(pipelineID))
+	Expect(err).NotTo(HaveOccurred())
+
+	jobID := rand.Intn(10000)
+	_, err = dbConn.Exec("INSERT INTO jobs(id, pipeline_id, name, config) VALUES ($1, $2, $3, '{}')", jobID, pipelineID, strconv.Itoa(jobID))
+	Expect(err).NotTo(HaveOccurred())
+}
+
+func ExpectMigrationToHaveFailed(dbConn *sql.DB, failedVersion int, expectDirty bool) {
+	var status string
+	var dirty bool
+	err := dbConn.QueryRow("SELECT status, dirty FROM migrations_history WHERE version=$1 ORDER BY tstamp desc LIMIT 1", failedVersion).Scan(&status, &dirty)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(status).To(Equal("failed"))
+	Expect(dirty).To(Equal(expectDirty))
 }

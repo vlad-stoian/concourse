@@ -2,8 +2,6 @@ package migrations
 
 import (
 	"errors"
-
-	. "github.com/concourse/concourse/atc/db/migration/voyager/migrations"
 )
 
 func (self *GoMigrationsRunner) Down_1528470872() error {

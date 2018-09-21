@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-func (m *GoMigrationsRunner) Up_4000() error {
+func (m *TestGoMigrationsRunner) Up_4000() error {
 	type info struct {
 		id     int
 		tstamp time.Time

@@ -3,8 +3,6 @@ package migrations
 import (
 	"database/sql"
 	"encoding/json"
-
-	. "github.com/concourse/concourse/atc/db/migration/voyager/migrations"
 )
 
 func (self *GoMigrationsRunner) Up_1516643303() error {

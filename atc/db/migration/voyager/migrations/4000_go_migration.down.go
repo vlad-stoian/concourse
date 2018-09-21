@@ -1,6 +1,6 @@
 package migrations
 
-func (m *GoMigrationsRunner) Down_4000() error {
+func (m *TestGoMigrationsRunner) Down_4000() error {
 
 	tx, err := m.DB.Begin()
 	if err != nil {

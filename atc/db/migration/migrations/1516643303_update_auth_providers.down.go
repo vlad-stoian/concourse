@@ -4,8 +4,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-
-	. "github.com/concourse/concourse/atc/db/migration/voyager/migrations"
 )
 
 func (self *GoMigrationsRunner) Down_1516643303() error {
