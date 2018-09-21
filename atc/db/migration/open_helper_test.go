@@ -18,6 +18,7 @@ import (
 )
 
 const initialSchemaVersion = 1510262030
+const upgradedSchemaVersion = 1510670987
 
 var _ = Describe("OpenHelper", func() {
 	var (
@@ -104,6 +105,66 @@ var _ = Describe("OpenHelper", func() {
 		})
 
 	})
+
+	Context("Downgrades to a version that uses the old mattes/migrate schema_migrations table", func() {
+		It("Downgrades to a given version and write it to a new created schema_migrations table", func() {
+			source.AssetNamesReturns([]string{
+				"1510262030_initial_schema.up.sql",
+				"1510670987_update_unique_constraint_for_resource_caches.up.sql",
+				"1510670987_update_unique_constraint_for_resource_caches.down.sql",
+			})
+			migrator := voyager.NewMigratorForMigrations(db, lockFactory, strategy, source)
+
+			err := migrator.Up()
+			Expect(err).NotTo(HaveOccurred())
+
+			currentVersion, err := migrator.CurrentVersion()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(currentVersion).To(Equal(upgradedSchemaVersion))
+
+			err = migrator.Migrate(initialSchemaVersion)
+			Expect(err).NotTo(HaveOccurred())
+
+			currentVersion, err = migrator.CurrentVersion()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(currentVersion).To(Equal(initialSchemaVersion))
+
+			ExpectDatabaseVersionToEqual(db, initialSchemaVersion, "schema_migrations")
+
+			ExpectToBeAbleToInsertData(db)
+		})
+
+		It("Downgrades to a given version and write it to the existing schema_migrations table with dirty true", func() {
+
+			source.AssetNamesReturns([]string{
+				"1510262030_initial_schema.up.sql",
+				"1510670987_update_unique_constraint_for_resource_caches.up.sql",
+				"1510670987_update_unique_constraint_for_resource_caches.down.sql",
+			})
+			migrator := voyager.NewMigratorForMigrations(db, lockFactory, strategy, source)
+
+			err := migrator.Up()
+			Expect(err).NotTo(HaveOccurred())
+
+			currentVersion, err := migrator.CurrentVersion()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(currentVersion).To(Equal(upgradedSchemaVersion))
+
+			SetupSchemaMigrationsTable(db, 8878, true)
+
+			err = migrator.Migrate(initialSchemaVersion)
+			Expect(err).NotTo(HaveOccurred())
+
+			currentVersion, err = migrator.CurrentVersion()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(currentVersion).To(Equal(initialSchemaVersion))
+
+			ExpectDatabaseVersionToEqual(db, initialSchemaVersion, "schema_migrations")
+
+			ExpectToBeAbleToInsertData(db)
+		})
+	})
+
 })
 
 func SetupMigrationVersionTableToExistAtVersion(db *sql.DB, version int) {
