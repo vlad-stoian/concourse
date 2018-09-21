@@ -6,7 +6,8 @@ import (
 
 	"github.com/concourse/concourse/atc/db/encryption"
 	"github.com/concourse/concourse/atc/db/lock"
-	. "github.com/concourse/concourse/atc/db/migration/voyager"
+	"github.com/concourse/concourse/atc/db/migration/migrations"
+	"github.com/concourse/concourse/atc/db/migration/voyager"
 	"github.com/gobuffalo/packr"
 )
 
@@ -25,7 +26,7 @@ type OpenHelper struct {
 	dataSourceName string
 	lockFactory    lock.LockFactory
 	strategy       encryption.Strategy
-	source         Source
+	source         voyager.Source
 }
 
 func (self *OpenHelper) CurrentVersion() (int, error) {
@@ -35,7 +36,9 @@ func (self *OpenHelper) CurrentVersion() (int, error) {
 	}
 
 	defer db.Close()
-	return NewMigrator(db, self.lockFactory, self.strategy, self.source).CurrentVersion()
+
+	runner := migrations.NewMigrationsRunner(db, self.strategy)
+	return voyager.NewMigrator(db, self.lockFactory, self.strategy, self.source, runner).CurrentVersion()
 }
 
 func (self *OpenHelper) SupportedVersion() (int, error) {
@@ -46,7 +49,8 @@ func (self *OpenHelper) SupportedVersion() (int, error) {
 
 	defer db.Close()
 
-	return NewMigrator(db, self.lockFactory, self.strategy, self.source).SupportedVersion()
+	runner := migrations.NewMigrationsRunner(db, self.strategy)
+	return voyager.NewMigrator(db, self.lockFactory, self.strategy, self.source, runner).SupportedVersion()
 }
 
 func (self *OpenHelper) Open() (*sql.DB, error) {
@@ -55,7 +59,8 @@ func (self *OpenHelper) Open() (*sql.DB, error) {
 		return nil, err
 	}
 
-	if err := NewMigrator(db, self.lockFactory, self.strategy, self.source).Up(); err != nil {
+	runner := migrations.NewMigrationsRunner(db, self.strategy)
+	if err := voyager.NewMigrator(db, self.lockFactory, self.strategy, self.source, runner).Up(); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
@@ -69,7 +74,8 @@ func (self *OpenHelper) OpenAtVersion(version int) (*sql.DB, error) {
 		return nil, err
 	}
 
-	if err := NewMigrator(db, self.lockFactory, self.strategy, self.source).Migrate(version); err != nil {
+	runner := migrations.NewMigrationsRunner(db, self.strategy)
+	if err := voyager.NewMigrator(db, self.lockFactory, self.strategy, self.source, runner).Migrate(version); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
@@ -84,7 +90,9 @@ func (self *OpenHelper) MigrateToVersion(version int) error {
 	}
 
 	defer db.Close()
-	m := NewMigrator(db, self.lockFactory, self.strategy, self.source)
+
+	runner := migrations.NewMigrationsRunner(db, self.strategy)
+	m := voyager.NewMigrator(db, self.lockFactory, self.strategy, self.source, runner)
 
 	err = self.migrateFromMigrationVersion(db)
 	if err != nil {
@@ -96,7 +104,7 @@ func (self *OpenHelper) MigrateToVersion(version int) error {
 
 func (self *OpenHelper) migrateFromMigrationVersion(db *sql.DB) error {
 
-	if !CheckTableExist(db, "migration_version") {
+	if !voyager.CheckTableExist(db, "migration_version") {
 		return nil
 	}
 

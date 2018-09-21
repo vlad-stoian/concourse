@@ -13,9 +13,9 @@ import (
 	"testing"
 )
 
-func TestMigration(t *testing.T) {
+func TestVoyager(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Migration Suite")
+	RunSpecs(t, "Voyager Suite")
 }
 
 var postgresRunner postgresrunner.Runner

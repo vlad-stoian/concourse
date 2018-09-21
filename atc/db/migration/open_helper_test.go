@@ -11,6 +11,7 @@ import (
 	"github.com/concourse/concourse/atc/db/encryption"
 	"github.com/concourse/concourse/atc/db/lock"
 	"github.com/concourse/concourse/atc/db/migration"
+	"github.com/concourse/concourse/atc/db/migration/migrations"
 	"github.com/concourse/concourse/atc/db/migration/voyager"
 	"github.com/concourse/concourse/atc/db/migration/voyager/voyagerfakes"
 	. "github.com/onsi/ginkgo"
@@ -113,7 +114,9 @@ var _ = Describe("OpenHelper", func() {
 				"1510670987_update_unique_constraint_for_resource_caches.up.sql",
 				"1510670987_update_unique_constraint_for_resource_caches.down.sql",
 			})
-			migrator := voyager.NewMigratorForMigrations(db, lockFactory, strategy, source)
+
+			runner := migrations.NewMigrationsRunner(db, strategy)
+			migrator := voyager.NewMigratorForMigrations(db, lockFactory, strategy, source, runner)
 
 			err := migrator.Up()
 			Expect(err).NotTo(HaveOccurred())
@@ -141,7 +144,9 @@ var _ = Describe("OpenHelper", func() {
 				"1510670987_update_unique_constraint_for_resource_caches.up.sql",
 				"1510670987_update_unique_constraint_for_resource_caches.down.sql",
 			})
-			migrator := voyager.NewMigratorForMigrations(db, lockFactory, strategy, source)
+
+			runner := migrations.NewMigrationsRunner(db, strategy)
+			migrator := voyager.NewMigratorForMigrations(db, lockFactory, strategy, source, runner)
 
 			err := migrator.Up()
 			Expect(err).NotTo(HaveOccurred())

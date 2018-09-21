@@ -2,7 +2,6 @@ package migrations
 
 import (
 	"database/sql"
-	"fmt"
 	"reflect"
 
 	"github.com/concourse/concourse/atc/db/encryption"

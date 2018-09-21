@@ -10,7 +10,7 @@ import (
 	"code.cloudfoundry.org/lager"
 	"github.com/concourse/concourse/atc/db/encryption"
 	"github.com/concourse/concourse/atc/db/lock"
-	"github.com/concourse/concourse/atc/db/migration/migrations"
+	"github.com/concourse/concourse/atc/db/migration/voyager/runner"
 	multierror "github.com/hashicorp/go-multierror"
 	_ "github.com/lib/pq"
 )
@@ -23,26 +23,28 @@ type Migrator interface {
 	Migrations() ([]migration, error)
 }
 
-func NewMigrator(db *sql.DB, lockFactory lock.LockFactory, strategy encryption.Strategy, source Source) Migrator {
-	return NewMigratorForMigrations(db, lockFactory, strategy, source)
+func NewMigrator(db *sql.DB, lockFactory lock.LockFactory, strategy encryption.Strategy, source Source, migrationsRunner runner.MigrationsRunner) Migrator {
+	return NewMigratorForMigrations(db, lockFactory, strategy, source, migrationsRunner)
 }
 
-func NewMigratorForMigrations(db *sql.DB, lockFactory lock.LockFactory, strategy encryption.Strategy, source Source) Migrator {
+func NewMigratorForMigrations(db *sql.DB, lockFactory lock.LockFactory, strategy encryption.Strategy, source Source, migrationsRunner runner.MigrationsRunner) Migrator {
 	return &migrator{
 		db,
 		lockFactory,
 		strategy,
 		lager.NewLogger("migrations"),
 		source,
+		migrationsRunner,
 	}
 }
 
 type migrator struct {
-	db          *sql.DB
-	lockFactory lock.LockFactory
-	strategy    encryption.Strategy
-	logger      lager.Logger
-	source      Source
+	db                 *sql.DB
+	lockFactory        lock.LockFactory
+	strategy           encryption.Strategy
+	logger             lager.Logger
+	source             Source
+	goMigrationsRunner runner.MigrationsRunner
 }
 
 func (m *migrator) SupportedVersion() (int, error) {
@@ -182,8 +184,7 @@ func (m *migrator) runMigration(migration migration) error {
 
 	switch migration.Strategy {
 	case GoMigration:
-		migrationsRunner := migrations.NewMigrationsRunner(m.db, m.strategy)
-		err = migrationsRunner.Run(migration.Name)
+		err = m.goMigrationsRunner.Run(migration.Name)
 		if err != nil {
 			return m.recordMigrationFailure(migration, err, false)
 		}
