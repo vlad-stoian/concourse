@@ -1,8 +1,8 @@
-package migration_test
+package voyager_test
 
 import (
-	"github.com/concourse/concourse/atc/db/migration"
-	"github.com/concourse/concourse/atc/db/migration/migrationfakes"
+	"github.com/concourse/concourse/atc/db/migration/voyager"
+	"github.com/concourse/concourse/atc/db/migration/voyager/voyagerfakes"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
@@ -23,17 +23,26 @@ var multipleStatementMigration = []byte(`
 		ALTER TABLE some_table ADD COLUMN notes varchar;
 		COMMIT;`)
 
+var sqlFunctionMigration = []byte(`
+BEGIN;
+  CREATE OR REPLACE FUNCTION on_item_delete() RETURNS TRIGGER AS $$
+  BEGIN
+          EXECUTE format('DROP TABLE IF EXISTS item%s', OLD.id);
+          RETURN NULL;
+  END;
+  $$ LANGUAGE plpgsql;`)
+
 var _ = Describe("Parser", func() {
 	var (
-		parser  *migration.Parser
-		bindata *migrationfakes.FakeBindata
+		parser  *voyager.Parser
+		bindata *voyagerfakes.FakeSource
 	)
 
 	BeforeEach(func() {
-		bindata = new(migrationfakes.FakeBindata)
+		bindata = new(voyagerfakes.FakeSource)
 		bindata.AssetReturns([]byte{}, nil)
 
-		parser = migration.NewParser(bindata)
+		parser = voyager.NewParser(bindata)
 	})
 	It("parses the direction of the migration from the file name", func() {
 		downMigration, err := parser.ParseFileToMigration("2000_some_migration.down.go")
@@ -48,17 +57,17 @@ var _ = Describe("Parser", func() {
 	It("parses the strategy of the migration from the file", func() {
 		downMigration, err := parser.ParseFileToMigration("2000_some_migration.down.go")
 		Expect(err).ToNot(HaveOccurred())
-		Expect(downMigration.Strategy).To(Equal(migration.GoMigration))
+		Expect(downMigration.Strategy).To(Equal(voyager.GoMigration))
 
 		bindata.AssetReturns(basicSQLMigration, nil)
 		upMigration, err := parser.ParseFileToMigration("1000_some_migration.up.sql")
 		Expect(err).ToNot(HaveOccurred())
-		Expect(upMigration.Strategy).To(Equal(migration.SQLTransaction))
+		Expect(upMigration.Strategy).To(Equal(voyager.SQLTransaction))
 
 		bindata.AssetReturns(noTransactionMigration, nil)
 		upNoTxMigration, err := parser.ParseFileToMigration("3000_some_no_transaction_migration.up.sql")
 		Expect(err).ToNot(HaveOccurred())
-		Expect(upNoTxMigration.Strategy).To(Equal(migration.SQLNoTransaction))
+		Expect(upNoTxMigration.Strategy).To(Equal(voyager.SQLNoTransaction))
 	})
 
 	Context("SQL migrations", func() {
@@ -70,10 +79,10 @@ var _ = Describe("Parser", func() {
 		})
 
 		It("combines sql functions in one statement", func() {
-			bindata.AssetStub = asset
-			migration, err := parser.ParseFileToMigration("1530823998_create_teams_trigger.up.sql")
+			bindata.AssetReturns(sqlFunctionMigration, nil)
+			migration, err := parser.ParseFileToMigration("1800_sql_function_migration.up.sql")
 			Expect(err).ToNot(HaveOccurred())
-			Expect(len(migration.Statements)).To(Equal(6))
+			Expect(len(migration.Statements)).To(Equal(1))
 		})
 
 		It("removes the BEGIN and COMMIT statements", func() {
