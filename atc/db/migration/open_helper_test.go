@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/concourse/concourse/atc/db/encryption"
-	"github.com/concourse/concourse/atc/db/lock"
 	"github.com/concourse/concourse/atc/db/migration"
 	"github.com/concourse/concourse/atc/db/migration/migrations"
 	"github.com/concourse/concourse/atc/db/migration/voyager"
@@ -23,33 +22,30 @@ const upgradedSchemaVersion = 1510670987
 
 var _ = Describe("OpenHelper", func() {
 	var (
-		err         error
-		db          *sql.DB
-		lockDB      *sql.DB
-		lockFactory lock.LockFactory
-		strategy    encryption.Strategy
-		source      *voyagerfakes.FakeSource
-		openHelper  *migration.OpenHelper
+		err        error
+		db         *sql.DB
+		strategy   encryption.Strategy
+		source     *voyagerfakes.FakeSource
+		openHelper *migration.OpenHelper
+		lockID     int
 	)
 
 	JustBeforeEach(func() {
 		db, err = sql.Open("postgres", postgresRunner.DataSourceName())
 		Expect(err).NotTo(HaveOccurred())
 
-		lockDB, err = sql.Open("postgres", postgresRunner.DataSourceName())
 		Expect(err).NotTo(HaveOccurred())
 
-		lockFactory = lock.NewLockFactory(lockDB)
 		strategy = encryption.NewNoEncryption()
-		openHelper = migration.NewOpenHelper("postgres", postgresRunner.DataSourceName(), lockFactory, strategy)
+		openHelper = migration.NewOpenHelper("postgres", postgresRunner.DataSourceName(), strategy)
 
 		source = new(voyagerfakes.FakeSource)
 		source.AssetStub = asset
+		lockID = 12345
 	})
 
 	AfterEach(func() {
 		_ = db.Close()
-		_ = lockDB.Close()
 	})
 
 	Context("legacy migration_version table exists", func() {
@@ -116,7 +112,7 @@ var _ = Describe("OpenHelper", func() {
 			})
 
 			runner := migrations.NewMigrationsRunner(db, strategy)
-			migrator := voyager.NewMigratorForMigrations(db, lockFactory, strategy, source, runner)
+			migrator := voyager.NewMigrator(db, lockID, source, runner)
 
 			err := migrator.Up()
 			Expect(err).NotTo(HaveOccurred())
@@ -146,7 +142,7 @@ var _ = Describe("OpenHelper", func() {
 			})
 
 			runner := migrations.NewMigrationsRunner(db, strategy)
-			migrator := voyager.NewMigratorForMigrations(db, lockFactory, strategy, source, runner)
+			migrator := voyager.NewMigrator(db, lockID, source, runner)
 
 			err := migrator.Up()
 			Expect(err).NotTo(HaveOccurred())

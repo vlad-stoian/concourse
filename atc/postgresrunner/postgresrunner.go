@@ -100,7 +100,6 @@ func (runner *Runner) MigrateToVersion(version int) {
 	err := migration.NewOpenHelper(
 		"postgres",
 		runner.DataSourceName(),
-		nil,
 		encryption.NewNoEncryption(),
 	).MigrateToVersion(version)
 	Expect(err).NotTo(HaveOccurred())
@@ -110,7 +109,6 @@ func (runner *Runner) TryOpenDBAtVersion(version int) (*sql.DB, error) {
 	dbConn, err := migration.NewOpenHelper(
 		"postgres",
 		runner.DataSourceName(),
-		nil,
 		encryption.NewNoEncryption(),
 	).OpenAtVersion(version)
 
@@ -135,7 +133,6 @@ func (runner *Runner) OpenDB() *sql.DB {
 	dbConn, err := migration.NewOpenHelper(
 		"postgres",
 		runner.DataSourceName(),
-		nil,
 		encryption.NewNoEncryption(),
 	).Open()
 	Expect(err).NotTo(HaveOccurred())

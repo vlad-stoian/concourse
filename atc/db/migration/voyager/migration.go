@@ -8,8 +8,6 @@ import (
 	"time"
 
 	"code.cloudfoundry.org/lager"
-	"github.com/concourse/concourse/atc/db/encryption"
-	"github.com/concourse/concourse/atc/db/lock"
 	"github.com/concourse/concourse/atc/db/migration/voyager/runner"
 	multierror "github.com/hashicorp/go-multierror"
 	_ "github.com/lib/pq"
@@ -23,15 +21,10 @@ type Migrator interface {
 	Migrations() ([]migration, error)
 }
 
-func NewMigrator(db *sql.DB, lockFactory lock.LockFactory, strategy encryption.Strategy, source Source, migrationsRunner runner.MigrationsRunner) Migrator {
-	return NewMigratorForMigrations(db, lockFactory, strategy, source, migrationsRunner)
-}
-
-func NewMigratorForMigrations(db *sql.DB, lockFactory lock.LockFactory, strategy encryption.Strategy, source Source, migrationsRunner runner.MigrationsRunner) Migrator {
+func NewMigrator(db *sql.DB, lockID int, source Source, migrationsRunner runner.MigrationsRunner) Migrator {
 	return &migrator{
 		db,
-		lockFactory,
-		strategy,
+		lockID,
 		lager.NewLogger("migrations"),
 		source,
 		migrationsRunner,
@@ -40,8 +33,7 @@ func NewMigratorForMigrations(db *sql.DB, lockFactory lock.LockFactory, strategy
 
 type migrator struct {
 	db                 *sql.DB
-	lockFactory        lock.LockFactory
-	strategy           encryption.Strategy
+	lockID             int
 	logger             lager.Logger
 	source             Source
 	goMigrationsRunner runner.MigrationsRunner
@@ -89,13 +81,13 @@ func (self *migrator) CurrentVersion() (int, error) {
 
 func (self *migrator) Migrate(toVersion int) error {
 
-	lock, err := self.acquireLock()
+	acquired, err := self.acquireLock()
 	if err != nil {
 		return err
 	}
 
-	if lock != nil {
-		defer lock.Release()
+	if acquired {
+		defer self.releaseLock()
 	}
 
 	existingDBVersion, err := self.migrateFromSchemaMigrations()
@@ -237,29 +229,38 @@ func (self *migrator) Up() error {
 	return self.Migrate(migrations[len(migrations)-1].Version)
 }
 
-func (self *migrator) acquireLock() (lock.Lock, error) {
+func (self *migrator) acquireLock() (bool, error) {
+	for {
+		var acquired bool
+		err := self.db.QueryRow(`SELECT pg_try_advisory_lock($1)`, self.lockID).Scan(&acquired)
 
-	var err error
-	var acquired bool
-	var newLock lock.Lock
-
-	if self.lockFactory != nil {
-		for {
-			newLock, acquired, err = self.lockFactory.Acquire(self.logger, lock.NewDatabaseMigrationLockID())
-
-			if err != nil {
-				return nil, err
-			}
-
-			if acquired {
-				break
-			}
-
-			time.Sleep(1 * time.Second)
+		if err != nil {
+			return false, err
 		}
-	}
 
-	return newLock, err
+		if acquired {
+			return acquired, nil
+		}
+
+		time.Sleep(1 * time.Second)
+	}
+}
+
+func (self *migrator) releaseLock() (bool, error) {
+	for {
+		var released bool
+		err := self.db.QueryRow(`SELECT pg_advisory_unlock($1)`, self.lockID).Scan(&released)
+
+		if err != nil {
+			return false, err
+		}
+
+		if released {
+			return released, nil
+		}
+
+		time.Sleep(1 * time.Second)
+	}
 }
 
 func CheckTableExist(db *sql.DB, tableName string) bool {
