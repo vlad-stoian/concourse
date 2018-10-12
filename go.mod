@@ -45,6 +45,7 @@ require (
 	github.com/coreos/go-oidc v0.0.0-20170307191026-be73733bb8cc
 	github.com/cppforlife/go-patch v0.0.0-20171006213518-250da0e0e68c // indirect
 	github.com/cppforlife/go-semi-semantic v0.0.0-20160921010311-576b6af77ae4
+	github.com/ddadlani/voyager v0.0.0-20181012214021-5e3d4bb01ce2
 	github.com/denisenkom/go-mssqldb v0.0.0-20180901172138-1eb28afdf9b6 // indirect
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible
 	github.com/docker/go-connections v0.4.0 // indirect
@@ -110,7 +111,7 @@ require (
 	github.com/krishicks/yaml-patch v0.0.10
 	github.com/lann/builder v0.0.0-20180802200727-47ae307949d0 // indirect
 	github.com/lann/ps v0.0.0-20150810152359-62de8c46ede0 // indirect
-	github.com/lib/pq v0.0.0-20180523175426-90697d60dd84
+	github.com/lib/pq v1.0.0
 	github.com/mailru/easyjson v0.0.0-20180823135443-60711f1a8329 // indirect
 	github.com/mattn/go-colorable v0.0.9
 	github.com/mattn/go-isatty v0.0.3

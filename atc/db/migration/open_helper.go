@@ -7,7 +7,7 @@ import (
 	"github.com/concourse/concourse/atc/db/encryption"
 	"github.com/concourse/concourse/atc/db/lock"
 	"github.com/concourse/concourse/atc/db/migration/migrations"
-	"github.com/concourse/concourse/atc/db/migration/voyager"
+	"github.com/ddadlani/voyager"
 	"github.com/gobuffalo/packr"
 )
 

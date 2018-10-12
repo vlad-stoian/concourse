@@ -11,8 +11,8 @@ import (
 	"github.com/concourse/concourse/atc/db/encryption"
 	"github.com/concourse/concourse/atc/db/migration"
 	"github.com/concourse/concourse/atc/db/migration/migrations"
-	"github.com/concourse/concourse/atc/db/migration/voyager"
-	"github.com/concourse/concourse/atc/db/migration/voyager/voyagerfakes"
+	"github.com/ddadlani/voyager"
+	"github.com/ddadlani/voyager/voyagerfakes"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )

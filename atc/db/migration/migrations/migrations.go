@@ -5,7 +5,7 @@ import (
 	"reflect"
 
 	"github.com/concourse/concourse/atc/db/encryption"
-	"github.com/concourse/concourse/atc/db/migration/voyager/runner"
+	"github.com/ddadlani/voyager/runner"
 )
 
 type GoMigrationsRunner struct {
