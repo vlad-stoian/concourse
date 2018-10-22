@@ -32,6 +32,26 @@ type OpenHelper struct {
 	lockID         int
 }
 
+type SchemaAdapter struct {
+	LastVersion int
+}
+
+func (s *SchemaAdapter) MigrateFromOldSchema(db *sql.DB) (int, error) {
+	return 0, nil
+}
+
+func (s *SchemaAdapter) MigrateToOldSchema(db *sql.DB, version int) error {
+	return nil
+}
+
+func (s *SchemaAdapter) OldSchemaLastVersion() int {
+	return -1
+}
+
+func (s *SchemaAdapter) FirstVersion() int {
+	return -1
+}
+
 func (self *OpenHelper) CurrentVersion() (int, error) {
 	db, err := sql.Open(self.driver, self.dataSourceName)
 	if err != nil {
@@ -41,7 +61,7 @@ func (self *OpenHelper) CurrentVersion() (int, error) {
 	defer db.Close()
 
 	runner := migrations.NewMigrationsRunner(db, self.strategy)
-	return voyager.NewMigrator(db, self.lockID, self.source, runner).CurrentVersion()
+	return voyager.NewMigrator(db, self.lockID, self.source, runner, nil).CurrentVersion()
 }
 
 func (self *OpenHelper) SupportedVersion() (int, error) {
@@ -53,7 +73,7 @@ func (self *OpenHelper) SupportedVersion() (int, error) {
 	defer db.Close()
 
 	runner := migrations.NewMigrationsRunner(db, self.strategy)
-	return voyager.NewMigrator(db, self.lockID, self.source, runner).SupportedVersion()
+	return voyager.NewMigrator(db, self.lockID, self.source, runner, nil).SupportedVersion()
 }
 
 func (self *OpenHelper) Open() (*sql.DB, error) {
@@ -63,7 +83,7 @@ func (self *OpenHelper) Open() (*sql.DB, error) {
 	}
 
 	runner := migrations.NewMigrationsRunner(db, self.strategy)
-	if err := voyager.NewMigrator(db, self.lockID, self.source, runner).Up(); err != nil {
+	if err := voyager.NewMigrator(db, self.lockID, self.source, runner, &SchemaAdapter{2}).Up(); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
@@ -78,7 +98,7 @@ func (self *OpenHelper) OpenAtVersion(version int) (*sql.DB, error) {
 	}
 
 	runner := migrations.NewMigrationsRunner(db, self.strategy)
-	if err := voyager.NewMigrator(db, self.lockID, self.source, runner).Migrate(version); err != nil {
+	if err := voyager.NewMigrator(db, self.lockID, self.source, runner, &SchemaAdapter{2}).Migrate(version); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
@@ -95,7 +115,7 @@ func (self *OpenHelper) MigrateToVersion(version int) error {
 	defer db.Close()
 
 	runner := migrations.NewMigrationsRunner(db, self.strategy)
-	m := voyager.NewMigrator(db, self.lockID, self.source, runner)
+	m := voyager.NewMigrator(db, self.lockID, self.source, runner, &SchemaAdapter{2})
 
 	err = self.migrateFromMigrationVersion(db)
 	if err != nil {
@@ -107,7 +127,7 @@ func (self *OpenHelper) MigrateToVersion(version int) error {
 
 func (self *OpenHelper) migrateFromMigrationVersion(db *sql.DB) error {
 
-	if !voyager.CheckTableExist(db, "migration_version") {
+	if checkTableExist(db, "migration_version") {
 		return nil
 	}
 

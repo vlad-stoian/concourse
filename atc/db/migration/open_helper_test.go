@@ -111,8 +111,10 @@ var _ = Describe("OpenHelper", func() {
 				"1510670987_update_unique_constraint_for_resource_caches.down.sql",
 			})
 
+			adapter := &migration.SchemaAdapter{2}
+
 			runner := migrations.NewMigrationsRunner(db, strategy)
-			migrator := voyager.NewMigrator(db, lockID, source, runner)
+			migrator := voyager.NewMigrator(db, lockID, source, runner, adapter)
 
 			err := migrator.Up()
 			Expect(err).NotTo(HaveOccurred())
@@ -141,8 +143,10 @@ var _ = Describe("OpenHelper", func() {
 				"1510670987_update_unique_constraint_for_resource_caches.down.sql",
 			})
 
+			adapter := &migration.SchemaAdapter{2}
+
 			runner := migrations.NewMigrationsRunner(db, strategy)
-			migrator := voyager.NewMigrator(db, lockID, source, runner)
+			migrator := voyager.NewMigrator(db, lockID, source, runner, adapter)
 
 			err := migrator.Up()
 			Expect(err).NotTo(HaveOccurred())
