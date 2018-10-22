@@ -2,6 +2,7 @@ package migration
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 
 	"github.com/concourse/concourse/atc/db/encryption"
@@ -139,4 +140,70 @@ func (self *OpenHelper) migrateFromMigrationVersion(db *sql.DB) error {
 	}
 
 	return nil
+}
+
+func checkTableExist(db *sql.DB, tableName string) bool {
+	var exists bool
+	err := db.QueryRow("SELECT EXISTS ( SELECT 1 FROM information_schema.tables WHERE table_name=$1)", tableName).Scan(&exists)
+	return err != nil || exists
+}
+
+type Adapter struct {
+	oldMigrationLastVersion  int
+	newMigrationStartVersion int
+	oldMigrationSchemaTable  string
+}
+
+func (a *Adapter) MigrateFromOldSchema(db *sql.DB) error {
+	if !checkTableExist(db, a.oldMigrationSchemaTable) {
+		return nil
+	}
+
+	var isDirty = false
+	var existingVersion int
+	err := db.QueryRow("SELECT dirty, version FROM "+a.oldMigrationSchemaTable+" LIMIT 1").Scan(&isDirty, &existingVersion)
+	if err != nil {
+		return err
+	}
+
+	if isDirty {
+		return errors.New("cannot begin migration. Database is in a dirty state")
+	}
+
+	return nil
+}
+
+func (a *Adapter) MigrateToOldSchema(db *sql.DB, toVersion int) error {
+	// newMigrationsHistoryFirstVersion := 1532706545
+
+	if toVersion >= a.newMigrationStartVersion {
+		return nil
+	}
+
+	if !checkTableExist(db, a.oldMigrationSchemaTable) {
+		_, err := db.Exec("CREATE TABLE old_schema (version bigint, dirty boolean)")
+		if err != nil {
+			return err
+		}
+
+		_, err = db.Exec("INSERT INTO old_schema (version, dirty) VALUES ($1, false)", toVersion)
+		if err != nil {
+			return err
+		}
+	} else {
+		_, err := db.Exec("UPDATE old_schema SET version=$1, dirty=false", toVersion)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (a *Adapter) OldSchemaLastVersion() int {
+	return a.oldMigrationLastVersion
+}
+
+func (a *Adapter) FirstVersion() int {
+	return a.newMigrationStartVersion
 }
