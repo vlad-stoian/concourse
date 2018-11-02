@@ -131,6 +131,7 @@ var _ = BeforeEach(func() {
 	tmp, err = ioutil.TempDir("", "topgun-tmp")
 	Expect(err).ToNot(HaveOccurred())
 
+	waitForDeploymentLock()
 	bosh("delete-deployment")
 
 	instances = map[string][]boshInstance{}
@@ -140,8 +141,8 @@ var _ = BeforeEach(func() {
 	dbConn = nil
 	webInstance = nil
 	atcExternalURL = ""
-	atcUsername = "some-user"
-	atcPassword = "password"
+	atcUsername = "test"
+	atcPassword = "test"
 })
 
 var _ = AfterEach(func() {
@@ -153,6 +154,7 @@ var _ = AfterEach(func() {
 
 	deleteAllContainers()
 
+	waitForDeploymentLock()
 	bosh("delete-deployment")
 
 	Expect(os.RemoveAll(tmp)).To(Succeed())
@@ -163,7 +165,7 @@ func requestCredsInfo(webUrl string) ([]byte, error) {
 	Expect(err).ToNot(HaveOccurred())
 
 	reqHeader := http.Header{}
-	token, err := fetchToken(webUrl, "some-user", "password")
+	token, err := fetchToken(webUrl, atcUsername, atcPassword)
 	Expect(err).ToNot(HaveOccurred())
 
 	reqHeader.Set("Authorization", "Bearer "+token.AccessToken)
@@ -181,6 +183,8 @@ func requestCredsInfo(webUrl string) ([]byte, error) {
 }
 
 func StartDeploy(manifest string, args ...string) *gexec.Session {
+	waitForDeploymentLock()
+
 	return spawnBosh(
 		append([]string{
 			"deploy", manifest,
@@ -223,11 +227,8 @@ func Deploy(manifest string, args ...string) {
 
 	webInstance = JobInstance("web")
 	if webInstance != nil {
-		// give some time for web to bootstrap (Run migrations, etc)
 		atcExternalURL = fmt.Sprintf("http://%s:8080", webInstance.IP)
-		Eventually(func() *gexec.Session {
-			return flyLogin("-c", atcExternalURL).Wait()
-		}, 2*time.Minute).Should(gexec.Exit(0))
+		FlyLogin(atcExternalURL)
 	}
 
 	dbInstance = JobInstance("postgres")
@@ -404,8 +405,15 @@ func flyHijackTask(argv ...string) *gexec.Session {
 	return hijackS
 }
 
-func flyLogin(args ...string) *gexec.Session {
-	return spawnFly(append([]string{"login", "-u", atcUsername, "-p", atcPassword}, args...)...)
+func FlyLogin(endpoint string) {
+	Eventually(func() *gexec.Session {
+		return spawnFly(
+			"login",
+			"-c", endpoint,
+			"-u", atcUsername,
+			"-p", atcPassword,
+		).Wait()
+	}, 2*time.Minute).Should(gexec.Exit(0), "fly should have been able to log in")
 }
 
 func spawnFly(argv ...string) *gexec.Session {
@@ -494,37 +502,53 @@ func flyTable(argv ...string) []map[string]string {
 	Expect(session.ExitCode()).To(Equal(0))
 
 	result := []map[string]string{}
-	var headers []string
 
-	rows := strings.Split(string(session.Out.Contents()), "\n")
-	for i, row := range rows {
+	var headers []string
+	for i, cols := range parseTable(string(session.Out.Contents())) {
 		if i == 0 {
-			headers = splitFlyColumns(row)
-			continue
-		}
-		if row == "" {
+			headers = cols
 			continue
 		}
 
 		result = append(result, map[string]string{})
-		columns := splitFlyColumns(row)
-
-		Expect(columns).To(HaveLen(len(headers)))
 
 		for j, header := range headers {
-			if header == "" || columns[j] == "" {
+			if header == "" || cols[j] == "" {
 				continue
 			}
 
-			result[i-1][header] = columns[j]
+			result[i-1][header] = cols[j]
 		}
 	}
 
 	return result
 }
 
-func splitFlyColumns(row string) []string {
-	return regexp.MustCompile(`\s{2,}`).Split(strings.TrimSpace(row), -1)
+func parseTable(content string) [][]string {
+	result := [][]string{}
+
+	var expectedColumns int
+	rows := strings.Split(content, "\n")
+	for i, row := range rows {
+		if row == "" {
+			continue
+		}
+
+		columns := splitTableColumns(row)
+		if i == 0 {
+			expectedColumns = len(columns)
+		} else {
+			Expect(columns).To(HaveLen(expectedColumns))
+		}
+
+		result = append(result, columns)
+	}
+
+	return result
+}
+
+func splitTableColumns(row string) []string {
+	return regexp.MustCompile(`(\s{2,}|\t)`).Split(strings.TrimSpace(row), -1)
 }
 
 func waitForWorkersToBeRunning() {
@@ -615,4 +639,21 @@ func deleteDeploymentWithForcedDrain() {
 
 	<-delete.Exited
 	Expect(delete.ExitCode()).To(Equal(0))
+}
+
+func waitForDeploymentLock() {
+dance:
+	for {
+		locks := bosh("locks", "--column", "type", "--column", "resource", "--column", "task id")
+
+		for _, lock := range parseTable(string(locks.Out.Contents())) {
+			if lock[0] == "deployment" && lock[1] == deploymentName {
+				fmt.Fprintf(GinkgoWriter, "waiting for deployment lock (task id %s)...", lock[2])
+				time.Sleep(5 * time.Second)
+				continue dance
+			}
+		}
+
+		break dance
+	}
 }
