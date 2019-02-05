@@ -260,7 +260,7 @@ var _ = Describe("ContainerProvider", func() {
 		fakeBaggageclaimClient.LookupVolumeReturns(fakeCertsVolume, true, nil)
 	}
 
-	Describe("FindOrCreateContainer", func() {
+	XDescribe("FindOrCreateContainer", func() {
 		BeforeEach(func() {
 			fakeDBWorker.CreateContainerReturns(fakeCreatingContainer, nil)
 			fakeLockFactory.AcquireReturns(new(lockfakes.FakeLock), true, nil)
