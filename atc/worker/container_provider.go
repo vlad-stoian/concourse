@@ -367,6 +367,7 @@ func (p *containerProvider) createGardenContainer(
 		p.volumeClient,
 		p.imageFactory,
 		p.worker,
+		p.lockFactory,
 		0,
 	)
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/concourse/baggageclaim"
+	"github.com/concourse/concourse/atc/db/lock"
 	"github.com/concourse/concourse/atc/metric"
 	"path/filepath"
 	"sort"
@@ -58,6 +59,7 @@ type gardenWorker struct {
 	imageFactory      ImageFactory
 	containerProvider ContainerProvider
 	dbWorker          db.Worker
+	lockFactory       lock.LockFactory
 	buildContainers   int
 }
 
@@ -70,10 +72,11 @@ func NewGardenWorker(
 	volumeClient VolumeClient,
 	imageFactory ImageFactory,
 	dbWorker db.Worker,
+	lockFactory lock.LockFactory,
 	numBuildContainers int,
-	// TODO: numBuildContainers is only needed for placement strategy but this
-	// method is called in ContainerProvider.FindOrCreateContainer as well and
-	// hence we pass in 0 values for numBuildContainers everywhere.
+// TODO: numBuildContainers is only needed for placement strategy but this
+// method is called in ContainerProvider.FindOrCreateContainer as well and
+// hence we pass in 0 values for numBuildContainers everywhere.
 ) Worker {
 	return &gardenWorker{
 		gardenClient:      gardenClient,
@@ -81,6 +84,7 @@ func NewGardenWorker(
 		imageFactory:      imageFactory,
 		containerProvider: containerProvider,
 		dbWorker:          dbWorker,
+		lockFactory:       lockFactory,
 		buildContainers:   numBuildContainers,
 	}
 }
@@ -162,8 +166,59 @@ func (worker *gardenWorker) FindOrCreateContainer(
 		gardenContainer   garden.Container
 		createdContainer  db.CreatedContainer
 		creatingContainer db.CreatingContainer
+		containerLock     lock.Lock
 		err               error
 	)
+
+	for {
+		creatingContainer, createdContainer, err = worker.findOrCreateCreatingContainer(logger, owner, metadata)
+		if err != nil {
+			logger.Error("failed-to-find-container-in-db", err)
+			return nil, err
+		}
+		// find container
+		if createdContainer != nil {
+			logger = logger.WithData(lager.Data{"container": createdContainer.Handle()})
+
+			logger.Debug("found-created-container-in-db")
+
+			gardenContainer, err = worker.gardenClient.Lookup(createdContainer.Handle())
+			if err != nil {
+				logger.Error("failed-to-lookup-created-container-in-garden", err)
+				return nil, err
+			}
+
+			return worker.containerProvider.ConstructGardenWorkerContainer(
+				logger,
+				createdContainer,
+				gardenContainer,
+			)
+		}
+		gardenContainer, err = worker.gardenClient.Lookup(creatingContainer.Handle())
+		if err != nil {
+			if _, ok := err.(garden.ContainerNotFoundError); !ok {
+				logger.Error("failed-to-lookup-creating-container-in-garden", err)
+				return nil, err
+			}
+		}
+
+		if gardenContainer == nil {
+			var acquired bool
+			containerLock, acquired, err = worker.lockFactory.Acquire(logger, lock.NewContainerCreatingLockID(creatingContainer.ID()))
+			if err != nil {
+				logger.Error("failed-to-acquire-container-creating-lock", err)
+				return nil, err
+			}
+
+			if !acquired {
+				time.Sleep(creatingContainerRetryDelay)
+				continue
+			}
+		}
+
+		defer containerLock.Release()
+		break
+	}
 
 	image, err := worker.imageFactory.GetImage(
 		logger,
@@ -176,30 +231,6 @@ func (worker *gardenWorker) FindOrCreateContainer(
 	)
 	if err != nil {
 		return nil, err
-	}
-
-	creatingContainer, createdContainer, err = worker.findOrCreateCreatingContainer(logger, owner, metadata)
-	if err != nil {
-		logger.Error("failed-to-find-container-in-db", err)
-		return nil, err
-	}
-	// find container
-	if createdContainer != nil {
-		logger = logger.WithData(lager.Data{"container": createdContainer.Handle()})
-
-		logger.Debug("found-created-container-in-db")
-
-		gardenContainer, err = worker.gardenClient.Lookup(createdContainer.Handle())
-		if err != nil {
-			logger.Error("failed-to-lookup-created-container-in-garden", err)
-			return nil, err
-		}
-
-		return worker.containerProvider.ConstructGardenWorkerContainer(
-			logger,
-			createdContainer,
-			gardenContainer,
-		)
 	}
 
 	logger.Debug("fetching-image")

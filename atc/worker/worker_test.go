@@ -45,6 +45,7 @@ var _ = Describe("Worker", func() {
 		workerVersion         string
 		fakeGardenClient      *gardenfakes.FakeClient
 		fakeImageFactory      *workerfakes.FakeImageFactory
+		fakeLockFactory		*lockfakes.FakeLockFactory
 		fakeImage             *workerfakes.FakeImage
 	)
 
@@ -86,12 +87,14 @@ var _ = Describe("Worker", func() {
 		dbWorker.StartTimeReturns(workerStartTime)
 		dbWorker.VersionReturns(&workerVersion)
 
+		fakeLockFactory = new(lockfakes.FakeLockFactory)
 		gardenWorker = NewGardenWorker(
 			fakeGardenClient,
 			fakeContainerProvider,
 			fakeVolumeClient,
 			fakeImageFactory,
 			dbWorker,
+			fakeLockFactory,
 			0,
 		)
 
