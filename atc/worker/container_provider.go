@@ -62,6 +62,12 @@ type ContainerProvider interface {
 		resourceTypes creds.VersionedResourceTypes,
 		image Image,
 	) (Container, error)
+
+	ConstructGardenWorkerContainer(
+		logger lager.Logger,
+		createdContainer db.CreatedContainer,
+		gardenContainer garden.Container,
+	) (Container, error)
 }
 
 // TODO: Remove the ImageFactory from the containerProvider.
@@ -128,7 +134,7 @@ func (p *containerProvider) FindOrCreateContainer(
 				return nil, err
 			}
 
-			return p.constructGardenWorkerContainer(
+			return p.ConstructGardenWorkerContainer(
 				logger,
 				createdContainer,
 				gardenContainer,
@@ -223,7 +229,7 @@ func (p *containerProvider) FindOrCreateContainer(
 
 		logger.Debug("created-container-in-db")
 
-		return p.constructGardenWorkerContainer(
+		return p.ConstructGardenWorkerContainer(
 			logger,
 			createdContainer,
 			gardenContainer,
@@ -280,7 +286,8 @@ func (p *containerProvider) FindCreatedContainerByHandle(
 	return container, true, nil
 }
 
-func (p *containerProvider) constructGardenWorkerContainer(
+
+func (p *containerProvider) ConstructGardenWorkerContainer(
 	logger lager.Logger,
 	createdContainer db.CreatedContainer,
 	gardenContainer garden.Container,
