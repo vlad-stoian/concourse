@@ -63,11 +63,25 @@ type ContainerProvider interface {
 		image Image,
 	) (Container, error)
 
+	//TODO: remove this from exposed methods?
 	ConstructGardenWorkerContainer(
 		logger lager.Logger,
 		createdContainer db.CreatedContainer,
 		gardenContainer garden.Container,
 	) (Container, error)
+
+	FindOrInitializeContainer(
+		logger lager.Logger,
+		owner db.ContainerOwner,
+		metadata db.ContainerMetadata,
+	) (db.CreatingContainer, db.CreatedContainer, error)
+
+	CreateGardenContainer(
+		containerSpec ContainerSpec,
+		fetchedImage FetchedImage,
+		creatingContainer db.CreatingContainer,
+		bindMounts []garden.BindMount,
+	) (garden.Container, error)
 }
 
 // TODO: Remove the ImageFactory from the containerProvider.
@@ -235,6 +249,80 @@ func (p *containerProvider) FindOrCreateContainer(
 			gardenContainer,
 		)
 	}
+}
+
+func (provider *containerProvider) FindOrInitializeContainer(
+	logger lager.Logger,
+	owner db.ContainerOwner,
+	metadata db.ContainerMetadata,
+) (db.CreatingContainer, db.CreatedContainer, error) {
+
+	creatingContainer, createdContainer, err := provider.worker.FindContainerOnWorker(owner)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if createdContainer != nil || creatingContainer != nil {
+		logger = logger.WithData(lager.Data{"container": creatingContainer.Handle()})
+		logger.Debug("found-container-in-db")
+		return creatingContainer, createdContainer, nil
+	}
+
+	if creatingContainer == nil {
+		logger.Debug("creating-container-in-db")
+		creatingContainer, err = provider.worker.CreateContainer(
+			owner,
+			metadata,
+		)
+		if err != nil {
+			logger.Error("failed-to-create-container-in-db", err)
+			return nil, nil, err
+		}
+
+		logger = logger.WithData(lager.Data{"container": creatingContainer.Handle()})
+		logger.Debug("created-creating-container-in-db")
+	}
+	return creatingContainer, nil, nil
+}
+
+func (provider *containerProvider) CreateGardenContainer (
+	containerSpec ContainerSpec,
+	fetchedImage FetchedImage,
+	creatingContainer db.CreatingContainer,
+	bindMounts []garden.BindMount,
+) (garden.Container, error) {
+
+	gardenProperties := garden.Properties{}
+
+	if containerSpec.User != "" {
+		gardenProperties[userPropertyName] = containerSpec.User
+	} else {
+		gardenProperties[userPropertyName] = fetchedImage.Metadata.User
+	}
+
+	env := append(fetchedImage.Metadata.Env, containerSpec.Env...)
+
+	if provider.worker.HTTPProxyURL() != "" {
+		env = append(env, fmt.Sprintf("http_proxy=%s", provider.worker.HTTPProxyURL()))
+	}
+
+	if provider.worker.HTTPSProxyURL() != "" {
+		env = append(env, fmt.Sprintf("https_proxy=%s", provider.worker.HTTPSProxyURL() ))
+	}
+
+	if provider.worker.NoProxy() != "" {
+		env = append(env, fmt.Sprintf("no_proxy=%s", provider.worker.NoProxy()))
+	}
+
+	return provider.gardenClient.Create(garden.ContainerSpec{
+		Handle:     creatingContainer.Handle(),
+		RootFSPath: fetchedImage.URL,
+		Privileged: fetchedImage.Privileged,
+		BindMounts: bindMounts,
+		Limits:     containerSpec.Limits.ToGardenLimits(),
+		Env:        env,
+		Properties: gardenProperties,
+	})
 }
 
 func (p *containerProvider) FindCreatedContainerByHandle(

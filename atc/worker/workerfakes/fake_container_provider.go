@@ -28,6 +28,22 @@ type FakeContainerProvider struct {
 		result1 worker.Container
 		result2 error
 	}
+	CreateGardenContainerStub        func(worker.ContainerSpec, worker.FetchedImage, db.CreatingContainer, []garden.BindMount) (garden.Container, error)
+	createGardenContainerMutex       sync.RWMutex
+	createGardenContainerArgsForCall []struct {
+		arg1 worker.ContainerSpec
+		arg2 worker.FetchedImage
+		arg3 db.CreatingContainer
+		arg4 []garden.BindMount
+	}
+	createGardenContainerReturns struct {
+		result1 garden.Container
+		result2 error
+	}
+	createGardenContainerReturnsOnCall map[int]struct {
+		result1 garden.Container
+		result2 error
+	}
 	FindCreatedContainerByHandleStub        func(lager.Logger, string, int) (worker.Container, bool, error)
 	findCreatedContainerByHandleMutex       sync.RWMutex
 	findCreatedContainerByHandleArgsForCall []struct {
@@ -65,6 +81,23 @@ type FakeContainerProvider struct {
 	findOrCreateContainerReturnsOnCall map[int]struct {
 		result1 worker.Container
 		result2 error
+	}
+	FindOrInitializeContainerStub        func(lager.Logger, db.ContainerOwner, db.ContainerMetadata) (db.CreatingContainer, db.CreatedContainer, error)
+	findOrInitializeContainerMutex       sync.RWMutex
+	findOrInitializeContainerArgsForCall []struct {
+		arg1 lager.Logger
+		arg2 db.ContainerOwner
+		arg3 db.ContainerMetadata
+	}
+	findOrInitializeContainerReturns struct {
+		result1 db.CreatingContainer
+		result2 db.CreatedContainer
+		result3 error
+	}
+	findOrInitializeContainerReturnsOnCall map[int]struct {
+		result1 db.CreatingContainer
+		result2 db.CreatedContainer
+		result3 error
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
@@ -131,6 +164,77 @@ func (fake *FakeContainerProvider) ConstructGardenWorkerContainerReturnsOnCall(i
 	}
 	fake.constructGardenWorkerContainerReturnsOnCall[i] = struct {
 		result1 worker.Container
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *FakeContainerProvider) CreateGardenContainer(arg1 worker.ContainerSpec, arg2 worker.FetchedImage, arg3 db.CreatingContainer, arg4 []garden.BindMount) (garden.Container, error) {
+	var arg4Copy []garden.BindMount
+	if arg4 != nil {
+		arg4Copy = make([]garden.BindMount, len(arg4))
+		copy(arg4Copy, arg4)
+	}
+	fake.createGardenContainerMutex.Lock()
+	ret, specificReturn := fake.createGardenContainerReturnsOnCall[len(fake.createGardenContainerArgsForCall)]
+	fake.createGardenContainerArgsForCall = append(fake.createGardenContainerArgsForCall, struct {
+		arg1 worker.ContainerSpec
+		arg2 worker.FetchedImage
+		arg3 db.CreatingContainer
+		arg4 []garden.BindMount
+	}{arg1, arg2, arg3, arg4Copy})
+	fake.recordInvocation("CreateGardenContainer", []interface{}{arg1, arg2, arg3, arg4Copy})
+	fake.createGardenContainerMutex.Unlock()
+	if fake.CreateGardenContainerStub != nil {
+		return fake.CreateGardenContainerStub(arg1, arg2, arg3, arg4)
+	}
+	if specificReturn {
+		return ret.result1, ret.result2
+	}
+	fakeReturns := fake.createGardenContainerReturns
+	return fakeReturns.result1, fakeReturns.result2
+}
+
+func (fake *FakeContainerProvider) CreateGardenContainerCallCount() int {
+	fake.createGardenContainerMutex.RLock()
+	defer fake.createGardenContainerMutex.RUnlock()
+	return len(fake.createGardenContainerArgsForCall)
+}
+
+func (fake *FakeContainerProvider) CreateGardenContainerCalls(stub func(worker.ContainerSpec, worker.FetchedImage, db.CreatingContainer, []garden.BindMount) (garden.Container, error)) {
+	fake.createGardenContainerMutex.Lock()
+	defer fake.createGardenContainerMutex.Unlock()
+	fake.CreateGardenContainerStub = stub
+}
+
+func (fake *FakeContainerProvider) CreateGardenContainerArgsForCall(i int) (worker.ContainerSpec, worker.FetchedImage, db.CreatingContainer, []garden.BindMount) {
+	fake.createGardenContainerMutex.RLock()
+	defer fake.createGardenContainerMutex.RUnlock()
+	argsForCall := fake.createGardenContainerArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4
+}
+
+func (fake *FakeContainerProvider) CreateGardenContainerReturns(result1 garden.Container, result2 error) {
+	fake.createGardenContainerMutex.Lock()
+	defer fake.createGardenContainerMutex.Unlock()
+	fake.CreateGardenContainerStub = nil
+	fake.createGardenContainerReturns = struct {
+		result1 garden.Container
+		result2 error
+	}{result1, result2}
+}
+
+func (fake *FakeContainerProvider) CreateGardenContainerReturnsOnCall(i int, result1 garden.Container, result2 error) {
+	fake.createGardenContainerMutex.Lock()
+	defer fake.createGardenContainerMutex.Unlock()
+	fake.CreateGardenContainerStub = nil
+	if fake.createGardenContainerReturnsOnCall == nil {
+		fake.createGardenContainerReturnsOnCall = make(map[int]struct {
+			result1 garden.Container
+			result2 error
+		})
+	}
+	fake.createGardenContainerReturnsOnCall[i] = struct {
+		result1 garden.Container
 		result2 error
 	}{result1, result2}
 }
@@ -274,15 +378,87 @@ func (fake *FakeContainerProvider) FindOrCreateContainerReturnsOnCall(i int, res
 	}{result1, result2}
 }
 
+func (fake *FakeContainerProvider) FindOrInitializeContainer(arg1 lager.Logger, arg2 db.ContainerOwner, arg3 db.ContainerMetadata) (db.CreatingContainer, db.CreatedContainer, error) {
+	fake.findOrInitializeContainerMutex.Lock()
+	ret, specificReturn := fake.findOrInitializeContainerReturnsOnCall[len(fake.findOrInitializeContainerArgsForCall)]
+	fake.findOrInitializeContainerArgsForCall = append(fake.findOrInitializeContainerArgsForCall, struct {
+		arg1 lager.Logger
+		arg2 db.ContainerOwner
+		arg3 db.ContainerMetadata
+	}{arg1, arg2, arg3})
+	fake.recordInvocation("FindOrInitializeContainer", []interface{}{arg1, arg2, arg3})
+	fake.findOrInitializeContainerMutex.Unlock()
+	if fake.FindOrInitializeContainerStub != nil {
+		return fake.FindOrInitializeContainerStub(arg1, arg2, arg3)
+	}
+	if specificReturn {
+		return ret.result1, ret.result2, ret.result3
+	}
+	fakeReturns := fake.findOrInitializeContainerReturns
+	return fakeReturns.result1, fakeReturns.result2, fakeReturns.result3
+}
+
+func (fake *FakeContainerProvider) FindOrInitializeContainerCallCount() int {
+	fake.findOrInitializeContainerMutex.RLock()
+	defer fake.findOrInitializeContainerMutex.RUnlock()
+	return len(fake.findOrInitializeContainerArgsForCall)
+}
+
+func (fake *FakeContainerProvider) FindOrInitializeContainerCalls(stub func(lager.Logger, db.ContainerOwner, db.ContainerMetadata) (db.CreatingContainer, db.CreatedContainer, error)) {
+	fake.findOrInitializeContainerMutex.Lock()
+	defer fake.findOrInitializeContainerMutex.Unlock()
+	fake.FindOrInitializeContainerStub = stub
+}
+
+func (fake *FakeContainerProvider) FindOrInitializeContainerArgsForCall(i int) (lager.Logger, db.ContainerOwner, db.ContainerMetadata) {
+	fake.findOrInitializeContainerMutex.RLock()
+	defer fake.findOrInitializeContainerMutex.RUnlock()
+	argsForCall := fake.findOrInitializeContainerArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+}
+
+func (fake *FakeContainerProvider) FindOrInitializeContainerReturns(result1 db.CreatingContainer, result2 db.CreatedContainer, result3 error) {
+	fake.findOrInitializeContainerMutex.Lock()
+	defer fake.findOrInitializeContainerMutex.Unlock()
+	fake.FindOrInitializeContainerStub = nil
+	fake.findOrInitializeContainerReturns = struct {
+		result1 db.CreatingContainer
+		result2 db.CreatedContainer
+		result3 error
+	}{result1, result2, result3}
+}
+
+func (fake *FakeContainerProvider) FindOrInitializeContainerReturnsOnCall(i int, result1 db.CreatingContainer, result2 db.CreatedContainer, result3 error) {
+	fake.findOrInitializeContainerMutex.Lock()
+	defer fake.findOrInitializeContainerMutex.Unlock()
+	fake.FindOrInitializeContainerStub = nil
+	if fake.findOrInitializeContainerReturnsOnCall == nil {
+		fake.findOrInitializeContainerReturnsOnCall = make(map[int]struct {
+			result1 db.CreatingContainer
+			result2 db.CreatedContainer
+			result3 error
+		})
+	}
+	fake.findOrInitializeContainerReturnsOnCall[i] = struct {
+		result1 db.CreatingContainer
+		result2 db.CreatedContainer
+		result3 error
+	}{result1, result2, result3}
+}
+
 func (fake *FakeContainerProvider) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
 	fake.constructGardenWorkerContainerMutex.RLock()
 	defer fake.constructGardenWorkerContainerMutex.RUnlock()
+	fake.createGardenContainerMutex.RLock()
+	defer fake.createGardenContainerMutex.RUnlock()
 	fake.findCreatedContainerByHandleMutex.RLock()
 	defer fake.findCreatedContainerByHandleMutex.RUnlock()
 	fake.findOrCreateContainerMutex.RLock()
 	defer fake.findOrCreateContainerMutex.RUnlock()
+	fake.findOrInitializeContainerMutex.RLock()
+	defer fake.findOrInitializeContainerMutex.RUnlock()
 	copiedInvocations := map[string][][]interface{}{}
 	for key, value := range fake.invocations {
 		copiedInvocations[key] = value

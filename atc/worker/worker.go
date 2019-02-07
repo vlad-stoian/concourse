@@ -171,17 +171,18 @@ func (worker *gardenWorker) FindOrCreateContainer(
 	)
 
 	for {
-		creatingContainer, createdContainer, err = worker.findOrCreateCreatingContainer(logger, owner, metadata)
+		creatingContainer, createdContainer, err = worker.containerProvider.FindOrInitializeContainer(logger, owner, metadata)
 		if err != nil {
 			logger.Error("failed-to-find-container-in-db", err)
 			return nil, err
 		}
-		// find container
+
 		if createdContainer != nil {
 			logger = logger.WithData(lager.Data{"container": createdContainer.Handle()})
 
 			logger.Debug("found-created-container-in-db")
 
+			// TODO: combining this and the second call below causes db_worker_provider_test.line 491 test to break. WHY?
 			gardenContainer, err = worker.gardenClient.Lookup(createdContainer.Handle())
 			if err != nil {
 				logger.Error("failed-to-lookup-created-container-in-garden", err)
@@ -194,6 +195,7 @@ func (worker *gardenWorker) FindOrCreateContainer(
 				gardenContainer,
 			)
 		}
+
 		gardenContainer, err = worker.gardenClient.Lookup(creatingContainer.Handle())
 		if err != nil {
 			if _, ok := err.(garden.ContainerNotFoundError); !ok {
@@ -220,22 +222,7 @@ func (worker *gardenWorker) FindOrCreateContainer(
 		break
 	}
 
-	image, err := worker.imageFactory.GetImage(
-		logger,
-		worker,
-		worker.volumeClient,
-		containerSpec.ImageSpec,
-		containerSpec.TeamID,
-		delegate,
-		resourceTypes,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	logger.Debug("fetching-image")
-
-	fetchedImage, err := image.FetchForContainer(ctx, logger, creatingContainer)
+	fetchedImage, err := worker.fetchImageForContainer(ctx, logger, containerSpec.ImageSpec, containerSpec.TeamID, delegate, resourceTypes, creatingContainer)
 	if err != nil {
 		creatingContainer.Failed()
 		logger.Error("failed-to-fetch-image-for-container", err)
@@ -256,38 +243,9 @@ func (worker *gardenWorker) FindOrCreateContainer(
 		return nil, err
 	}
 
-	gardenProperties := garden.Properties{}
+	logger.Debug("creating-garden-container")
 
-	if containerSpec.User != "" {
-		gardenProperties[userPropertyName] = containerSpec.User
-	} else {
-		gardenProperties[userPropertyName] = fetchedImage.Metadata.User
-	}
-
-	env := append(fetchedImage.Metadata.Env, containerSpec.Env...)
-
-	if worker.dbWorker.HTTPProxyURL() != "" {
-		env = append(env, fmt.Sprintf("http_proxy=%s", worker.dbWorker.HTTPProxyURL()))
-	}
-
-	if worker.dbWorker.HTTPSProxyURL() != "" {
-		env = append(env, fmt.Sprintf("https_proxy=%s", worker.dbWorker.HTTPSProxyURL() ))
-	}
-
-	if worker.dbWorker.NoProxy() != "" {
-		env = append(env, fmt.Sprintf("no_proxy=%s", worker.dbWorker.NoProxy()))
-	}
-
-	gardenContainer, err = worker.gardenClient.Create(garden.ContainerSpec{
-		Handle:     creatingContainer.Handle(),
-		RootFSPath: fetchedImage.URL,
-		Privileged: fetchedImage.Privileged,
-		BindMounts: bindMounts,
-		Limits:     containerSpec.Limits.ToGardenLimits(),
-		Env:        env,
-		Properties: gardenProperties,
-	})
-
+	gardenContainer, err = worker.containerProvider.CreateGardenContainer(containerSpec, fetchedImage, creatingContainer, bindMounts)
 	if err != nil {
 		_, failedErr := creatingContainer.Failed()
 		if failedErr != nil {
@@ -320,6 +278,32 @@ func (worker *gardenWorker) FindOrCreateContainer(
 		gardenContainer,
 	)
 
+}
+func (worker *gardenWorker) fetchImageForContainer(
+	ctx context.Context,
+	logger lager.Logger,
+	imageSpec ImageSpec,
+	teamID int,
+	delegate ImageFetchingDelegate,
+	resourceTypes creds.VersionedResourceTypes,
+	creatingContainer db.CreatingContainer,
+) (FetchedImage, error) {
+	image, err := worker.imageFactory.GetImage(
+		logger,
+		worker,
+		worker.volumeClient,
+		imageSpec,
+		teamID,
+		delegate,
+		resourceTypes,
+	)
+	if err != nil {
+		return FetchedImage{}, err
+	}
+
+	logger.Debug("fetching-image")
+
+	return image.FetchForContainer(ctx, logger, creatingContainer)
 }
 
 func (worker *gardenWorker) getBindMounts(volumeMounts []VolumeMount, bindMountSources []BindMountSource) ([]garden.BindMount, error){
@@ -492,34 +476,6 @@ func (worker *gardenWorker) createVolumes(logger lager.Logger, isPrivileged bool
 }
 
 
-func (worker *gardenWorker) findOrCreateCreatingContainer(logger lager.Logger, owner db.ContainerOwner, metadata db.ContainerMetadata,) (db.CreatingContainer, db.CreatedContainer, error){
-	creatingContainer, createdContainer , err := worker.dbWorker.FindContainerOnWorker(owner)
-	if err !=  nil {
-		return nil, nil, err
-	}
-
-	if createdContainer != nil || creatingContainer != nil {
-		logger = logger.WithData(lager.Data{"container": creatingContainer.Handle()})
-		logger.Debug("found-container-in-db")
-		return creatingContainer, createdContainer, nil
-	}
-
-	if creatingContainer == nil {
-		logger.Debug("creating-container-in-db")
-		creatingContainer, err = worker.dbWorker.CreateContainer(
-			owner,
-			metadata,
-		)
-		if err != nil {
-			logger.Error("failed-to-create-container-in-db", err)
-			return nil, nil, err
-		}
-
-		logger = logger.WithData(lager.Data{"container": creatingContainer.Handle()})
-		logger.Debug("created-creating-container-in-db")
-	}
-	return creatingContainer, nil, nil
-}
 
 func (worker *gardenWorker) FindContainerByHandle(logger lager.Logger, teamID int, handle string) (Container, bool, error) {
 	return worker.containerProvider.FindCreatedContainerByHandle(logger, handle, teamID)
