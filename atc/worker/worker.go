@@ -3,11 +3,9 @@ package worker
 import (
 	"context"
 	"errors"
-	"fmt"
 	"github.com/concourse/baggageclaim"
 	"path/filepath"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/concourse/concourse/atc/metric"
@@ -33,11 +31,8 @@ const userPropertyName = "user"
 type Worker interface {
 	Client
 
-	ActiveContainers() int
-	ActiveVolumes() int
 	BuildContainers() int
 
-	Description() string
 	Name() string
 	ResourceTypes() []atc.WorkerResourceType
 	Tags() atc.Tags
@@ -275,16 +270,6 @@ func (worker *gardenWorker) FindContainerByHandle(logger lager.Logger, teamID in
 	return findCreatedContainerByHandle(logger, handle, teamID, worker.dbTeamFactory, worker.gardenClient, worker.volumeRepo, worker.volumeClient, worker.Name())
 }
 
-// TODO: are these required on the Worker object?
-// does the caller already have the db.Worker available?
-func (worker *gardenWorker) ActiveContainers() int {
-	return worker.dbWorker.ActiveContainers()
-}
-
-func (worker *gardenWorker) ActiveVolumes() int {
-	return worker.dbWorker.ActiveVolumes()
-}
-
 func (worker *gardenWorker) Name() string {
 	return worker.dbWorker.Name()
 }
@@ -355,18 +340,6 @@ func determineUnderlyingTypeName(typeName string, resourceTypes creds.VersionedR
 		delete(resourceTypesMap, underlyingTypeName)
 	}
 	return underlyingTypeName
-}
-
-func (worker *gardenWorker) Description() string {
-	messages := []string{
-		fmt.Sprintf("platform '%s'", worker.dbWorker.Platform()),
-	}
-
-	for _, tag := range worker.dbWorker.Tags() {
-		messages = append(messages, fmt.Sprintf("tag '%s'", tag))
-	}
-
-	return strings.Join(messages, ", ")
 }
 
 func (worker *gardenWorker) IsOwnedByTeam() bool {
