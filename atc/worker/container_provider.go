@@ -285,7 +285,7 @@ func (provider *containerProvider) FindOrInitializeContainer(
 	return creatingContainer, nil, nil
 }
 
-func (provider *containerProvider) CreateGardenContainer (
+func (provider *containerProvider) CreateGardenContainer(
 	containerSpec ContainerSpec,
 	fetchedImage FetchedImage,
 	creatingContainer db.CreatingContainer,
@@ -307,7 +307,7 @@ func (provider *containerProvider) CreateGardenContainer (
 	}
 
 	if provider.worker.HTTPSProxyURL() != "" {
-		env = append(env, fmt.Sprintf("https_proxy=%s", provider.worker.HTTPSProxyURL() ))
+		env = append(env, fmt.Sprintf("https_proxy=%s", provider.worker.HTTPSProxyURL()))
 	}
 
 	if provider.worker.NoProxy() != "" {
@@ -374,7 +374,6 @@ func (p *containerProvider) FindCreatedContainerByHandle(
 	return container, true, nil
 }
 
-
 func (p *containerProvider) ConstructGardenWorkerContainer(
 	logger lager.Logger,
 	createdContainer db.CreatedContainer,
@@ -396,7 +395,6 @@ func (p *containerProvider) ConstructGardenWorkerContainer(
 		p.worker.Name(),
 	)
 }
-
 func (p *containerProvider) createGardenContainer(
 	logger lager.Logger,
 	creatingContainer db.CreatingContainer,

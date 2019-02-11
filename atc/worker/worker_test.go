@@ -45,7 +45,7 @@ var _ = Describe("Worker", func() {
 		workerVersion         string
 		fakeGardenClient      *gardenfakes.FakeClient
 		fakeImageFactory      *workerfakes.FakeImageFactory
-		fakeLockFactory		*lockfakes.FakeLockFactory
+		fakeLockFactory       *lockfakes.FakeLockFactory
 		fakeImage             *workerfakes.FakeImage
 	)
 

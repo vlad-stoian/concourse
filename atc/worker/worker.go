@@ -4,13 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/concourse/baggageclaim"
-	"github.com/concourse/concourse/atc/db/lock"
-	"github.com/concourse/concourse/atc/metric"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/concourse/baggageclaim"
+	"github.com/concourse/concourse/atc/db/lock"
+	"github.com/concourse/concourse/atc/metric"
 
 	"code.cloudfoundry.org/garden"
 	"code.cloudfoundry.org/lager"
@@ -74,9 +75,9 @@ func NewGardenWorker(
 	dbWorker db.Worker,
 	lockFactory lock.LockFactory,
 	numBuildContainers int,
-// TODO: numBuildContainers is only needed for placement strategy but this
-// method is called in ContainerProvider.FindOrCreateContainer as well and
-// hence we pass in 0 values for numBuildContainers everywhere.
+	// TODO: numBuildContainers is only needed for placement strategy but this
+	// method is called in ContainerProvider.FindOrCreateContainer as well and
+	// hence we pass in 0 values for numBuildContainers everywhere.
 ) Worker {
 	return &gardenWorker{
 		gardenClient:      gardenClient,
@@ -251,7 +252,6 @@ func (worker *gardenWorker) FindOrCreateContainer(
 			return nil, err
 		}
 
-
 	}
 
 	logger.Debug("created-container-in-garden")
@@ -279,7 +279,7 @@ func (worker *gardenWorker) FindOrCreateContainer(
 func (worker *gardenWorker) fetchImageForContainer(
 	ctx context.Context,
 	logger lager.Logger,
-	imageSpec ImageSpec,
+	spec ImageSpec,
 	teamID int,
 	delegate ImageFetchingDelegate,
 	resourceTypes creds.VersionedResourceTypes,
@@ -289,7 +289,7 @@ func (worker *gardenWorker) fetchImageForContainer(
 		logger,
 		worker,
 		worker.volumeClient,
-		imageSpec,
+		spec,
 		teamID,
 		delegate,
 		resourceTypes,
@@ -299,11 +299,10 @@ func (worker *gardenWorker) fetchImageForContainer(
 	}
 
 	logger.Debug("fetching-image")
-
 	return image.FetchForContainer(ctx, logger, creatingContainer)
 }
 
-func (worker *gardenWorker) getBindMounts(volumeMounts []VolumeMount, bindMountSources []BindMountSource) ([]garden.BindMount, error){
+func (worker *gardenWorker) getBindMounts(volumeMounts []VolumeMount, bindMountSources []BindMountSource) ([]garden.BindMount, error) {
 	bindMounts := []garden.BindMount{}
 
 	for _, mount := range bindMountSources {
@@ -326,7 +325,7 @@ func (worker *gardenWorker) getBindMounts(volumeMounts []VolumeMount, bindMountS
 	return bindMounts, nil
 }
 
-func (worker *gardenWorker) createVolumes(logger lager.Logger, isPrivileged bool,  creatingContainer db.CreatingContainer, spec ContainerSpec) ([]VolumeMount, error){
+func (worker *gardenWorker) createVolumes(logger lager.Logger, isPrivileged bool, creatingContainer db.CreatingContainer, spec ContainerSpec) ([]VolumeMount, error) {
 	var volumeMounts []VolumeMount
 	var ioVolumeMounts []VolumeMount
 
@@ -344,13 +343,12 @@ func (worker *gardenWorker) createVolumes(logger lager.Logger, isPrivileged bool
 		return nil, err
 	}
 
-	scratchMount :=  VolumeMount{
+	scratchMount := VolumeMount{
 		Volume:    scratchVolume,
 		MountPath: "/scratch",
 	}
 
 	volumeMounts = append(volumeMounts, scratchMount)
-
 
 	hasSpecDirInInputs := anyMountTo(spec.Dir, getDestinationPathsFromInputs(spec.Inputs))
 	hasSpecDirInOutputs := anyMountTo(spec.Dir, getDestinationPathsFromOutputs(spec.Outputs))
@@ -436,7 +434,6 @@ func (worker *gardenWorker) createVolumes(logger lager.Logger, isPrivileged bool
 		inputDestinationPaths[cleanedInputPath] = true
 	}
 
-
 	for _, outputPath := range spec.Outputs {
 		cleanedOutputPath := filepath.Clean(outputPath)
 
@@ -465,14 +462,11 @@ func (worker *gardenWorker) createVolumes(logger lager.Logger, isPrivileged bool
 		})
 	}
 
-
 	sort.Sort(byMountPath(ioVolumeMounts))
 
 	volumeMounts = append(volumeMounts, ioVolumeMounts...)
 	return volumeMounts, nil
 }
-
-
 
 func (worker *gardenWorker) FindContainerByHandle(logger lager.Logger, teamID int, handle string) (Container, bool, error) {
 	return worker.containerProvider.FindCreatedContainerByHandle(logger, handle, teamID)
