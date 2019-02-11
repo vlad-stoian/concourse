@@ -152,6 +152,12 @@ func (worker *gardenWorker) LookupVolume(logger lager.Logger, handle string) (Vo
 	return worker.volumeClient.LookupVolume(logger, handle)
 }
 
+// If a created container exists, a garden.Container must also exist
+// so this method will find it, create the corresponding worker.Container
+// and return it.
+// If no created container exists, FindOrCreateContainer will go through
+// the container creation flow i.e. find or create a CreatingContainer,
+// create the garden.Container and then the CreatedContainer
 func (worker *gardenWorker) FindOrCreateContainer(
 	ctx context.Context,
 	logger lager.Logger,
@@ -167,7 +173,6 @@ func (worker *gardenWorker) FindOrCreateContainer(
 		gardenContainer   garden.Container
 		createdContainer  db.CreatedContainer
 		creatingContainer db.CreatingContainer
-		containerLock     lock.Lock
 		err               error
 	)
 
@@ -205,17 +210,6 @@ func (worker *gardenWorker) FindOrCreateContainer(
 	}
 
 	if gardenContainer == nil {
-		var acquired bool
-		containerLock, acquired, err = worker.lockFactory.Acquire(logger, lock.NewContainerCreatingLockID(creatingContainer.ID()))
-		if err != nil || !acquired {
-			if err == nil {
-				err = errors.New("did-not-acquire-container-creating-lock")
-			}
-			logger.Error("failed-to-acquire-container-creating-lock", err)
-			return nil, err
-		}
-
-		defer containerLock.Release()
 
 		fetchedImage, err := worker.fetchImageForContainer(ctx, logger, containerSpec.ImageSpec, containerSpec.TeamID, delegate, resourceTypes, creatingContainer)
 		if err != nil {

@@ -181,7 +181,6 @@ func (provider *dbWorkerProvider) NewGardenWorker(logger lager.Logger, tikTok cl
 		gClient,
 		volumeClient,
 		savedWorker,
-		provider.imageFactory,
 		provider.dbVolumeRepository,
 		provider.dbTeamFactory,
 		provider.lockFactory,

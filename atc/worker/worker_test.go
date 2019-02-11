@@ -47,6 +47,7 @@ var _ = Describe("Worker", func() {
 		fakeImageFactory      *workerfakes.FakeImageFactory
 		fakeLockFactory       *lockfakes.FakeLockFactory
 		fakeImage             *workerfakes.FakeImage
+		dbWorker               *dbfakes.FakeWorker
 	)
 
 	BeforeEach(func() {
@@ -73,19 +74,18 @@ var _ = Describe("Worker", func() {
 		fakeImageFactory = new(workerfakes.FakeImageFactory)
 		fakeImage = new(workerfakes.FakeImage)
 		fakeImageFactory.GetImageReturns(fakeImage, nil)
-	})
 
-	JustBeforeEach(func() {
-		dbWorker := new(dbfakes.FakeWorker)
+		dbWorker = new(dbfakes.FakeWorker)
 		dbWorker.ActiveContainersReturns(activeContainers)
 		dbWorker.ResourceTypesReturns(resourceTypes)
 		dbWorker.PlatformReturns(platform)
-		dbWorker.TagsReturns(tags)
 		dbWorker.EphemeralReturns(ephemeral)
-		dbWorker.TeamIDReturns(teamID)
 		dbWorker.NameReturns(workerName)
 		dbWorker.StartTimeReturns(workerStartTime)
 		dbWorker.VersionReturns(&workerVersion)
+	})
+
+	JustBeforeEach(func() {
 
 		fakeLockFactory = new(lockfakes.FakeLockFactory)
 		gardenWorker = NewGardenWorker(
@@ -263,6 +263,8 @@ var _ = Describe("Worker", func() {
 		})
 
 		JustBeforeEach(func() {
+			dbWorker.TeamIDReturns(teamID)
+			dbWorker.TagsReturns(tags)
 			satisfyingWorker, satisfyingErr = gardenWorker.Satisfying(logger, spec)
 		})
 
@@ -553,7 +555,6 @@ var _ = Describe("Worker", func() {
 
 	Describe("FindOrCreateContainer", func() {
 		var (
-			fakeDBWorker              *dbfakes.FakeWorker
 			fakeLockFactory           *lockfakes.FakeLockFactory
 			fakeCreatingContainer     *dbfakes.FakeCreatingContainer
 			fakeCreatedContainer      *dbfakes.FakeCreatedContainer
@@ -561,9 +562,7 @@ var _ = Describe("Worker", func() {
 			fakeImageFetchingDelegate *workerfakes.FakeImageFetchingDelegate
 			fakeBaggageclaimClient    *baggageclaimfakes.FakeClient
 			fakeDBTeam                *dbfakes.FakeTeam
-			fakeDBVolumeRepository    *dbfakes.FakeVolumeRepository
-
-			containerProvider ContainerProvider
+			fakeDBVolumeRepository *dbfakes.FakeVolumeRepository
 
 			fakeLocalInput    *workerfakes.FakeInputSource
 			fakeRemoteInput   *workerfakes.FakeInputSource
@@ -589,6 +588,9 @@ var _ = Describe("Worker", func() {
 
 			findOrCreateErr       error
 			findOrCreateContainer Container
+
+			containerProvider ContainerProvider
+			gardenWorkerWithContainerProvider Worker
 		)
 
 		CertsVolumeExists := func() {
@@ -604,13 +606,14 @@ var _ = Describe("Worker", func() {
 			fakeLockFactory = new(lockfakes.FakeLockFactory)
 			fakeImageFetchingDelegate = new(workerfakes.FakeImageFetchingDelegate)
 
-			fakeDBWorker = new(dbfakes.FakeWorker)
-			fakeDBWorker.HTTPProxyURLReturns("http://proxy.com")
-			fakeDBWorker.HTTPSProxyURLReturns("https://proxy.com")
-			fakeDBWorker.NoProxyReturns("http://noproxy.com")
-			fakeDBWorker.CreateContainerReturns(fakeCreatingContainer, nil)
+			dbWorker = new(dbfakes.FakeWorker)
+			dbWorker.HTTPProxyURLReturns("http://proxy.com")
+			dbWorker.HTTPSProxyURLReturns("https://proxy.com")
+			dbWorker.NoProxyReturns("http://noproxy.com")
+			dbWorker.CreateContainerReturns(fakeCreatingContainer, nil)
 			fakeLockFactory.AcquireReturns(new(lockfakes.FakeLock), true, nil)
 			fakeBaggageclaimClient = new(baggageclaimfakes.FakeClient)
+			fakeDBVolumeRepository = new(dbfakes.FakeVolumeRepository)
 
 			fakeLocalInput = new(workerfakes.FakeInputSource)
 			fakeLocalInput.DestinationPathReturns("/some/work-dir/local-input")
@@ -756,48 +759,51 @@ var _ = Describe("Worker", func() {
 			fakeDBTeamFactory := new(dbfakes.FakeTeamFactory)
 			fakeDBTeam = new(dbfakes.FakeTeam)
 			fakeDBTeamFactory.GetByIDReturns(fakeDBTeam)
-			fakeDBVolumeRepository = new(dbfakes.FakeVolumeRepository)
 			fakeGardenContainer = new(gardenfakes.FakeContainer)
 			fakeGardenClient.CreateReturns(fakeGardenContainer, nil)
 
 			containerProvider = NewContainerProvider(
 				fakeGardenClient,
 				fakeVolumeClient,
-				fakeDBWorker,
-				fakeImageFactory,
+				dbWorker,
 				fakeDBVolumeRepository,
 				fakeDBTeamFactory,
 				fakeLockFactory,
 			)
+
 		})
 
 		JustBeforeEach(func() {
-			findOrCreateContainer, findOrCreateErr = containerProvider.FindOrCreateContainer(
+			gardenWorkerWithContainerProvider = NewGardenWorker(
+				fakeGardenClient,
+				containerProvider,
+				fakeVolumeClient,
+				fakeImageFactory,
+				dbWorker,
+				fakeLockFactory,
+				0,
+			)
+			findOrCreateContainer, findOrCreateErr = gardenWorkerWithContainerProvider.FindOrCreateContainer(
 				ctx,
 				logger,
-				fakeContainerOwner,
 				fakeImageFetchingDelegate,
+				fakeContainerOwner,
 				containerMetadata,
 				containerSpec,
 				workerSpec,
 				resourceTypes,
-				fakeImage,
 			)
 		})
 		disasterErr := errors.New("disaster")
 
 		Context("when container exists in database in creating state", func() {
 			BeforeEach(func() {
-				fakeDBWorker.FindContainerOnWorkerReturns(fakeCreatingContainer, nil, nil)
+				dbWorker.FindContainerOnWorkerReturns(fakeCreatingContainer, nil, nil)
 			})
 
 			Context("when container exists in garden", func() {
 				BeforeEach(func() {
 					fakeGardenClient.LookupReturns(fakeGardenContainer, nil)
-				})
-
-				It("does not acquire lock", func() {
-					Expect(fakeLockFactory.AcquireCallCount()).To(Equal(0))
 				})
 
 				It("marks container as created", func() {
@@ -814,10 +820,6 @@ var _ = Describe("Worker", func() {
 					fakeGardenClient.LookupReturns(nil, garden.ContainerNotFoundError{})
 				})
 				BeforeEach(CertsVolumeExists)
-
-				It("acquires lock", func() {
-					Expect(fakeLockFactory.AcquireCallCount()).To(Equal(1))
-				})
 
 				It("creates container in garden", func() {
 					Expect(fakeGardenClient.CreateCallCount()).To(Equal(1))
@@ -846,24 +848,11 @@ var _ = Describe("Worker", func() {
 				})
 			})
 
-			Context("when failing to acquire the lock", func() {
-				BeforeEach(func() {
-					fakeLock := new(lockfakes.FakeLock)
-
-					fakeLockFactory.AcquireReturnsOnCall(0, nil, false, nil)
-					fakeLockFactory.AcquireReturnsOnCall(1, fakeLock, true, nil)
-				})
-
-				// another ATC may have created the container already
-				It("rechecks for created and creating container", func() {
-					Expect(fakeDBWorker.FindContainerOnWorkerCallCount()).To(Equal(2))
-				})
-			})
 		})
 
 		Context("when container exists in database in created state", func() {
 			BeforeEach(func() {
-				fakeDBWorker.FindContainerOnWorkerReturns(nil, fakeCreatedContainer, nil)
+				dbWorker.FindContainerOnWorkerReturns(nil, fakeCreatedContainer, nil)
 			})
 
 			Context("when container exists in garden", func() {
@@ -872,6 +861,7 @@ var _ = Describe("Worker", func() {
 				})
 
 				It("returns container", func() {
+					Expect(findOrCreateErr).ToNot(HaveOccurred())
 					Expect(findOrCreateContainer).ToNot(BeNil())
 				})
 			})
@@ -892,7 +882,7 @@ var _ = Describe("Worker", func() {
 
 		Context("when container does not exist in database", func() {
 			BeforeEach(func() {
-				fakeDBWorker.FindContainerOnWorkerReturns(nil, nil, nil)
+				dbWorker.FindContainerOnWorkerReturns(nil, nil, nil)
 			})
 
 			Context("when the certs volume does not exist on the worker", func() {
@@ -919,11 +909,7 @@ var _ = Describe("Worker", func() {
 			})
 
 			It("creates container in database", func() {
-				Expect(fakeDBWorker.CreateContainerCallCount()).To(Equal(1))
-			})
-
-			It("acquires lock", func() {
-				Expect(fakeLockFactory.AcquireCallCount()).To(Equal(1))
+				Expect(dbWorker.CreateContainerCallCount()).To(Equal(1))
 			})
 
 			It("creates the container in garden with the input and output volumes in alphabetical order", func() {
