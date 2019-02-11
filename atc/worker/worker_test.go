@@ -6,10 +6,10 @@ import (
 	"code.cloudfoundry.org/lager"
 	"context"
 	"errors"
+	"fmt"
 	"github.com/concourse/baggageclaim"
 	"github.com/concourse/baggageclaim/baggageclaimfakes"
 	"github.com/concourse/concourse/atc/db"
-	"github.com/concourse/concourse/atc/db/lock/lockfakes"
 	"io/ioutil"
 	"time"
 
@@ -30,24 +30,54 @@ import (
 
 var _ = Describe("Worker", func() {
 	var (
-		logger                *lagertest.TestLogger
-		fakeVolumeClient      *workerfakes.FakeVolumeClient
-		fakeContainerProvider *workerfakes.FakeContainerProvider
-		activeContainers      int
-		resourceTypes         []atc.WorkerResourceType
-		platform              string
-		tags                  atc.Tags
-		teamID                int
-		ephemeral             bool
-		workerName            string
-		workerStartTime       int64
-		gardenWorker          Worker
-		workerVersion         string
-		fakeGardenClient      *gardenfakes.FakeClient
-		fakeImageFactory      *workerfakes.FakeImageFactory
-		fakeLockFactory       *lockfakes.FakeLockFactory
-		fakeImage             *workerfakes.FakeImage
-		dbWorker               *dbfakes.FakeWorker
+		logger                    *lagertest.TestLogger
+		fakeVolumeClient          *workerfakes.FakeVolumeClient
+		activeContainers          int
+		resourceTypes             []atc.WorkerResourceType
+		platform                  string
+		tags                      atc.Tags
+		teamID                    int
+		ephemeral                 bool
+		workerName                string
+		workerStartTime           int64
+		gardenWorker              Worker
+		workerVersion             string
+		fakeGardenClient          *gardenfakes.FakeClient
+		fakeImageFactory          *workerfakes.FakeImageFactory
+		fakeImage                 *workerfakes.FakeImage
+		dbWorker                  *dbfakes.FakeWorker
+		fakeDBVolumeRepository    *dbfakes.FakeVolumeRepository
+		fakeDBTeamFactory         *dbfakes.FakeTeamFactory
+		fakeDBTeam                *dbfakes.FakeTeam
+		fakeCreatingContainer     *dbfakes.FakeCreatingContainer
+		fakeCreatedContainer      *dbfakes.FakeCreatedContainer
+		fakeGardenContainer       *gardenfakes.FakeContainer
+		fakeImageFetchingDelegate *workerfakes.FakeImageFetchingDelegate
+		fakeBaggageclaimClient    *baggageclaimfakes.FakeClient
+
+		fakeLocalInput    *workerfakes.FakeInputSource
+		fakeRemoteInput   *workerfakes.FakeInputSource
+		fakeRemoteInputAS *workerfakes.FakeArtifactSource
+
+		fakeBindMount *workerfakes.FakeBindMountSource
+
+		fakeRemoteInputContainerVolume *workerfakes.FakeVolume
+		fakeLocalVolume                *workerfakes.FakeVolume
+		fakeOutputVolume               *workerfakes.FakeVolume
+		fakeLocalCOWVolume             *workerfakes.FakeVolume
+
+		ctx                context.Context
+		containerSpec      ContainerSpec
+		workerSpec         WorkerSpec
+		fakeContainerOwner *dbfakes.FakeContainerOwner
+		containerMetadata  db.ContainerMetadata
+
+		stubbedVolumes     map[string]*workerfakes.FakeVolume
+		volumeSpecs        map[string]VolumeSpec
+		credsResourceTypes creds.VersionedResourceTypes
+
+		findOrCreateErr       error
+		findOrCreateContainer Container
 	)
 
 	BeforeEach(func() {
@@ -69,12 +99,17 @@ var _ = Describe("Worker", func() {
 		workerStartTime = time.Now().Unix()
 		workerVersion = "1.2.3"
 
-		fakeContainerProvider = new(workerfakes.FakeContainerProvider)
 		fakeGardenClient = new(gardenfakes.FakeClient)
 		fakeImageFactory = new(workerfakes.FakeImageFactory)
 		fakeImage = new(workerfakes.FakeImage)
 		fakeImageFactory.GetImageReturns(fakeImage, nil)
 
+		fakeCreatingContainer = new(dbfakes.FakeCreatingContainer)
+		fakeCreatingContainer.HandleReturns("some-handle")
+		fakeCreatedContainer = new(dbfakes.FakeCreatedContainer)
+		fakeCreatedContainer.HandleReturns("some-handle")
+
+		fakeDBVolumeRepository = new(dbfakes.FakeVolumeRepository)
 		dbWorker = new(dbfakes.FakeWorker)
 		dbWorker.ActiveContainersReturns(activeContainers)
 		dbWorker.ResourceTypesReturns(resourceTypes)
@@ -83,21 +118,175 @@ var _ = Describe("Worker", func() {
 		dbWorker.NameReturns(workerName)
 		dbWorker.StartTimeReturns(workerStartTime)
 		dbWorker.VersionReturns(&workerVersion)
+		dbWorker.HTTPProxyURLReturns("http://proxy.com")
+		dbWorker.HTTPSProxyURLReturns("https://proxy.com")
+		dbWorker.NoProxyReturns("http://noproxy.com")
+		dbWorker.CreateContainerReturns(fakeCreatingContainer, nil)
+
+		fakeDBTeamFactory = new(dbfakes.FakeTeamFactory)
+		fakeDBTeam = new(dbfakes.FakeTeam)
+		fakeDBTeamFactory.GetByIDReturns(fakeDBTeam)
+
+		fakeImageFetchingDelegate = new(workerfakes.FakeImageFetchingDelegate)
+
+		fakeBaggageclaimClient = new(baggageclaimfakes.FakeClient)
+
+		fakeLocalInput = new(workerfakes.FakeInputSource)
+		fakeLocalInput.DestinationPathReturns("/some/work-dir/local-input")
+		fakeLocalInputAS := new(workerfakes.FakeArtifactSource)
+		fakeLocalVolume = new(workerfakes.FakeVolume)
+		fakeLocalVolume.PathReturns("/fake/local/volume")
+		fakeLocalVolume.COWStrategyReturns(baggageclaim.COWStrategy{
+			Parent: new(baggageclaimfakes.FakeVolume),
+		})
+		fakeLocalInputAS.VolumeOnReturns(fakeLocalVolume, true, nil)
+		fakeLocalInput.SourceReturns(fakeLocalInputAS)
+
+		fakeBindMount = new(workerfakes.FakeBindMountSource)
+		fakeBindMount.VolumeOnReturns(garden.BindMount{
+			SrcPath: "some/source",
+			DstPath: "some/destination",
+			Mode:    garden.BindMountModeRO,
+		}, true, nil)
+
+		fakeRemoteInput = new(workerfakes.FakeInputSource)
+		fakeRemoteInput.DestinationPathReturns("/some/work-dir/remote-input")
+		fakeRemoteInputAS = new(workerfakes.FakeArtifactSource)
+		fakeRemoteInputAS.VolumeOnReturns(nil, false, nil)
+		fakeRemoteInput.SourceReturns(fakeRemoteInputAS)
+
+		fakeScratchVolume := new(workerfakes.FakeVolume)
+		fakeScratchVolume.PathReturns("/fake/scratch/volume")
+
+		fakeWorkdirVolume := new(workerfakes.FakeVolume)
+		fakeWorkdirVolume.PathReturns("/fake/work-dir/volume")
+
+		fakeOutputVolume = new(workerfakes.FakeVolume)
+		fakeOutputVolume.PathReturns("/fake/output/volume")
+
+		fakeLocalCOWVolume = new(workerfakes.FakeVolume)
+		fakeLocalCOWVolume.PathReturns("/fake/local/cow/volume")
+
+		fakeRemoteInputContainerVolume = new(workerfakes.FakeVolume)
+		fakeRemoteInputContainerVolume.PathReturns("/fake/remote/input/container/volume")
+
+		stubbedVolumes = map[string]*workerfakes.FakeVolume{
+			"/scratch":                    fakeScratchVolume,
+			"/some/work-dir":              fakeWorkdirVolume,
+			"/some/work-dir/local-input":  fakeLocalCOWVolume,
+			"/some/work-dir/remote-input": fakeRemoteInputContainerVolume,
+			"/some/work-dir/output":       fakeOutputVolume,
+		}
+
+		volumeSpecs = map[string]VolumeSpec{}
+
+		fakeVolumeClient.FindOrCreateCOWVolumeForContainerStub = func(logger lager.Logger, volumeSpec VolumeSpec, creatingContainer db.CreatingContainer, volume Volume, teamID int, mountPath string) (Volume, error) {
+			Expect(volume).To(Equal(fakeLocalVolume))
+
+			volume, found := stubbedVolumes[mountPath]
+			if !found {
+				panic("unknown container volume: " + mountPath)
+			}
+
+			volumeSpecs[mountPath] = volumeSpec
+
+			return volume, nil
+		}
+
+		fakeVolumeClient.FindOrCreateVolumeForContainerStub = func(logger lager.Logger, volumeSpec VolumeSpec, creatingContainer db.CreatingContainer, teamID int, mountPath string) (Volume, error) {
+			volume, found := stubbedVolumes[mountPath]
+			if !found {
+				panic("unknown container volume: " + mountPath)
+			}
+
+			volumeSpecs[mountPath] = volumeSpec
+
+			return volume, nil
+		}
+		ctx = context.Background()
+
+		fakeContainerOwner = new(dbfakes.FakeContainerOwner)
+
+		fakeImage.FetchForContainerReturns(FetchedImage{
+			Metadata: ImageMetadata{
+				Env: []string{"IMAGE=ENV"},
+			},
+			URL: "some-image-url",
+		}, nil)
+		containerMetadata = db.ContainerMetadata{
+			StepName: "some-step",
+		}
+
+		variables := template.StaticVariables{
+			"secret-image":  "super-secret-image",
+			"secret-source": "super-secret-source",
+		}
+
+		cpu := uint64(1024)
+		memory := uint64(1024)
+		containerSpec = ContainerSpec{
+			TeamID: 73410,
+
+			ImageSpec: ImageSpec{
+				ImageResource: &ImageResource{
+					Type:   "registry-image",
+					Source: creds.NewSource(variables, atc.Source{"some": "((secret-image))"}),
+				},
+			},
+
+			User: "some-user",
+			Env:  []string{"SOME=ENV"},
+
+			Dir: "/some/work-dir",
+
+			Inputs: []InputSource{
+				fakeLocalInput,
+				fakeRemoteInput,
+			},
+
+			Outputs: OutputPaths{
+				"some-output": "/some/work-dir/output",
+			},
+			BindMounts: []BindMountSource{
+				fakeBindMount,
+			},
+			Limits: ContainerLimits{
+				CPU:    &cpu,
+				Memory: &memory,
+			},
+		}
+
+		credsResourceTypes = creds.NewVersionedResourceTypes(variables, atc.VersionedResourceTypes{
+			{
+				ResourceType: atc.ResourceType{
+					Type:   "some-type",
+					Source: atc.Source{"some": "((secret-source))"},
+				},
+				Version: atc.Version{"some": "version"},
+			},
+		})
+
+		workerSpec = WorkerSpec{
+			TeamID:        73410,
+			ResourceType:  "registry-image",
+			ResourceTypes: credsResourceTypes,
+		}
+
+		fakeGardenContainer = new(gardenfakes.FakeContainer)
+		fakeGardenClient.CreateReturns(fakeGardenContainer, nil)
+
 	})
 
 	JustBeforeEach(func() {
-
-		fakeLockFactory = new(lockfakes.FakeLockFactory)
 		gardenWorker = NewGardenWorker(
 			fakeGardenClient,
-			fakeContainerProvider,
+			fakeDBVolumeRepository,
 			fakeVolumeClient,
 			fakeImageFactory,
+			fakeDBTeamFactory,
 			dbWorker,
-			fakeLockFactory,
 			0,
 		)
-
 	})
 
 	Describe("IsVersionCompatible", func() {
@@ -172,33 +361,212 @@ var _ = Describe("Worker", func() {
 
 	Describe("FindCreatedContainerByHandle", func() {
 		var (
-			handle            string
-			foundContainer    Container
-			existingContainer *workerfakes.FakeContainer
-			found             bool
-			checkErr          error
+			foundContainer Container
+			findErr        error
+			found          bool
 		)
 
-		BeforeEach(func() {
-			handle = "we98lsv"
-			existingContainer = new(workerfakes.FakeContainer)
-			fakeContainerProvider.FindCreatedContainerByHandleReturns(existingContainer, true, nil)
-		})
-
 		JustBeforeEach(func() {
-			foundContainer, found, checkErr = gardenWorker.FindContainerByHandle(logger, 42, handle)
+			foundContainer, found, findErr = gardenWorker.FindContainerByHandle(logger,42,  "some-container-handle")
 		})
 
-		It("calls the container provider", func() {
-			Expect(fakeContainerProvider.FindCreatedContainerByHandleCallCount()).To(Equal(1))
+		Context("when the gardenClient returns a container and no error", func() {
+			var (
+				fakeContainer *gardenfakes.FakeContainer
+			)
 
-			Expect(foundContainer).To(Equal(existingContainer))
-			Expect(checkErr).ToNot(HaveOccurred())
-			Expect(found).To(BeTrue())
+			BeforeEach(func() {
+				fakeContainer = new(gardenfakes.FakeContainer)
+				fakeContainer.HandleReturns("provider-handle")
+
+				fakeDBVolumeRepository.FindVolumesForContainerReturns([]db.CreatedVolume{}, nil)
+
+				fakeDBTeam.FindCreatedContainerByHandleReturns(fakeCreatedContainer, true, nil)
+				fakeGardenClient.LookupReturns(fakeContainer, nil)
+			})
+
+			It("returns the container", func() {
+				Expect(findErr).NotTo(HaveOccurred())
+				Expect(found).To(BeTrue())
+				Expect(foundContainer.Handle()).To(Equal(fakeContainer.Handle()))
+			})
+
+			Describe("the found container", func() {
+				It("can be destroyed", func() {
+					err := foundContainer.Destroy()
+					Expect(err).NotTo(HaveOccurred())
+
+					By("destroying via garden")
+					Expect(fakeGardenClient.DestroyCallCount()).To(Equal(1))
+					Expect(fakeGardenClient.DestroyArgsForCall(0)).To(Equal("provider-handle"))
+				})
+			})
+
+			Context("when the concourse:volumes property is present", func() {
+				var (
+					expectedHandle1Volume *workerfakes.FakeVolume
+					expectedHandle2Volume *workerfakes.FakeVolume
+				)
+
+				BeforeEach(func() {
+					expectedHandle1Volume = new(workerfakes.FakeVolume)
+					expectedHandle2Volume = new(workerfakes.FakeVolume)
+
+					expectedHandle1Volume.HandleReturns("handle-1")
+					expectedHandle2Volume.HandleReturns("handle-2")
+
+					expectedHandle1Volume.PathReturns("/handle-1/path")
+					expectedHandle2Volume.PathReturns("/handle-2/path")
+
+					fakeVolumeClient.LookupVolumeStub = func(logger lager.Logger, handle string) (Volume, bool, error) {
+						if handle == "handle-1" {
+							return expectedHandle1Volume, true, nil
+						} else if handle == "handle-2" {
+							return expectedHandle2Volume, true, nil
+						} else {
+							panic("unknown handle: " + handle)
+						}
+					}
+
+					dbVolume1 := new(dbfakes.FakeCreatedVolume)
+					dbVolume2 := new(dbfakes.FakeCreatedVolume)
+					fakeDBVolumeRepository.FindVolumesForContainerReturns([]db.CreatedVolume{dbVolume1, dbVolume2}, nil)
+					dbVolume1.HandleReturns("handle-1")
+					dbVolume2.HandleReturns("handle-2")
+					dbVolume1.PathReturns("/handle-1/path")
+					dbVolume2.PathReturns("/handle-2/path")
+				})
+
+				Describe("VolumeMounts", func() {
+					It("returns all bound volumes based on properties on the container", func() {
+						Expect(findErr).NotTo(HaveOccurred())
+						Expect(found).To(BeTrue())
+						Expect(foundContainer.VolumeMounts()).To(ConsistOf([]VolumeMount{
+							{Volume: expectedHandle1Volume, MountPath: "/handle-1/path"},
+							{Volume: expectedHandle2Volume, MountPath: "/handle-2/path"},
+						}))
+					})
+
+					Context("when LookupVolume returns an error", func() {
+						disaster := errors.New("nope")
+
+						BeforeEach(func() {
+							fakeVolumeClient.LookupVolumeReturns(nil, false, disaster)
+						})
+
+						It("returns the error on lookup", func() {
+							Expect(findErr).To(Equal(disaster))
+						})
+					})
+				})
+			})
+
+			Context("when the user property is present", func() {
+				var (
+					actualSpec garden.ProcessSpec
+					actualIO   garden.ProcessIO
+				)
+
+				BeforeEach(func() {
+					actualSpec = garden.ProcessSpec{
+						Path: "some-path",
+						Args: []string{"some", "args"},
+						Env:  []string{"some=env"},
+						Dir:  "some-dir",
+					}
+
+					actualIO = garden.ProcessIO{}
+
+					fakeContainer.PropertiesReturns(garden.Properties{"user": "maverick"}, nil)
+				})
+
+				JustBeforeEach(func() {
+					foundContainer.Run(actualSpec, actualIO)
+				})
+
+				Describe("Run", func() {
+					It("calls Run() on the garden container and injects the user", func() {
+						Expect(fakeContainer.RunCallCount()).To(Equal(1))
+						spec, io := fakeContainer.RunArgsForCall(0)
+						Expect(spec).To(Equal(garden.ProcessSpec{
+							Path: "some-path",
+							Args: []string{"some", "args"},
+							Env:  []string{"some=env"},
+							Dir:  "some-dir",
+							User: "maverick",
+						}))
+						Expect(io).To(Equal(garden.ProcessIO{}))
+					})
+				})
+			})
+
+			Context("when the user property is not present", func() {
+				var (
+					actualSpec garden.ProcessSpec
+					actualIO   garden.ProcessIO
+				)
+
+				BeforeEach(func() {
+					actualSpec = garden.ProcessSpec{
+						Path: "some-path",
+						Args: []string{"some", "args"},
+						Env:  []string{"some=env"},
+						Dir:  "some-dir",
+					}
+
+					actualIO = garden.ProcessIO{}
+
+					fakeContainer.PropertiesReturns(garden.Properties{"user": ""}, nil)
+				})
+
+				JustBeforeEach(func() {
+					foundContainer.Run(actualSpec, actualIO)
+				})
+
+				Describe("Run", func() {
+					It("calls Run() on the garden container and injects the default user", func() {
+						Expect(fakeContainer.RunCallCount()).To(Equal(1))
+						spec, io := fakeContainer.RunArgsForCall(0)
+						Expect(spec).To(Equal(garden.ProcessSpec{
+							Path: "some-path",
+							Args: []string{"some", "args"},
+							Env:  []string{"some=env"},
+							Dir:  "some-dir",
+							User: "root",
+						}))
+						Expect(io).To(Equal(garden.ProcessIO{}))
+						Expect(fakeContainer.RunCallCount()).To(Equal(1))
+					})
+				})
+			})
 		})
 
+		Context("when the gardenClient returns garden.ContainerNotFoundError", func() {
+			BeforeEach(func() {
+				fakeGardenClient.LookupReturns(nil, garden.ContainerNotFoundError{Handle: "some-handle"})
+			})
+
+			It("returns false and no error", func() {
+				Expect(findErr).ToNot(HaveOccurred())
+				Expect(found).To(BeFalse())
+			})
+		})
+
+		Context("when the gardenClient returns an error", func() {
+			var expectedErr error
+
+			BeforeEach(func() {
+				expectedErr = fmt.Errorf("container not found")
+				fakeGardenClient.LookupReturns(nil, expectedErr)
+			})
+
+			It("returns nil and forwards the error", func() {
+				Expect(findErr).To(Equal(expectedErr))
+
+				Expect(foundContainer).To(BeNil())
+			})
+		})
 	})
-
 	Describe("Satisfying", func() {
 		var (
 			spec WorkerSpec
@@ -554,236 +922,13 @@ var _ = Describe("Worker", func() {
 	})
 
 	Describe("FindOrCreateContainer", func() {
-		var (
-			fakeLockFactory           *lockfakes.FakeLockFactory
-			fakeCreatingContainer     *dbfakes.FakeCreatingContainer
-			fakeCreatedContainer      *dbfakes.FakeCreatedContainer
-			fakeGardenContainer       *gardenfakes.FakeContainer
-			fakeImageFetchingDelegate *workerfakes.FakeImageFetchingDelegate
-			fakeBaggageclaimClient    *baggageclaimfakes.FakeClient
-			fakeDBTeam                *dbfakes.FakeTeam
-			fakeDBVolumeRepository *dbfakes.FakeVolumeRepository
-
-			fakeLocalInput    *workerfakes.FakeInputSource
-			fakeRemoteInput   *workerfakes.FakeInputSource
-			fakeRemoteInputAS *workerfakes.FakeArtifactSource
-
-			fakeBindMount *workerfakes.FakeBindMountSource
-
-			fakeRemoteInputContainerVolume *workerfakes.FakeVolume
-			fakeLocalVolume                *workerfakes.FakeVolume
-			fakeOutputVolume               *workerfakes.FakeVolume
-			fakeLocalCOWVolume             *workerfakes.FakeVolume
-
-			ctx                context.Context
-			containerSpec      ContainerSpec
-			workerSpec         WorkerSpec
-			fakeContainerOwner *dbfakes.FakeContainerOwner
-			containerMetadata  db.ContainerMetadata
-			resourceTypes      creds.VersionedResourceTypes
-
-			stubbedVolumes     map[string]*workerfakes.FakeVolume
-			volumeSpecs        map[string]VolumeSpec
-			credsResourceTypes creds.VersionedResourceTypes
-
-			findOrCreateErr       error
-			findOrCreateContainer Container
-
-			containerProvider ContainerProvider
-			gardenWorkerWithContainerProvider Worker
-		)
-
 		CertsVolumeExists := func() {
 			fakeCertsVolume := new(baggageclaimfakes.FakeVolume)
 			fakeBaggageclaimClient.LookupVolumeReturns(fakeCertsVolume, true, nil)
 		}
 
-		BeforeEach(func() {
-			fakeCreatingContainer = new(dbfakes.FakeCreatingContainer)
-			fakeCreatingContainer.HandleReturns("some-handle")
-			fakeCreatedContainer = new(dbfakes.FakeCreatedContainer)
-
-			fakeLockFactory = new(lockfakes.FakeLockFactory)
-			fakeImageFetchingDelegate = new(workerfakes.FakeImageFetchingDelegate)
-
-			dbWorker = new(dbfakes.FakeWorker)
-			dbWorker.HTTPProxyURLReturns("http://proxy.com")
-			dbWorker.HTTPSProxyURLReturns("https://proxy.com")
-			dbWorker.NoProxyReturns("http://noproxy.com")
-			dbWorker.CreateContainerReturns(fakeCreatingContainer, nil)
-			fakeLockFactory.AcquireReturns(new(lockfakes.FakeLock), true, nil)
-			fakeBaggageclaimClient = new(baggageclaimfakes.FakeClient)
-			fakeDBVolumeRepository = new(dbfakes.FakeVolumeRepository)
-
-			fakeLocalInput = new(workerfakes.FakeInputSource)
-			fakeLocalInput.DestinationPathReturns("/some/work-dir/local-input")
-			fakeLocalInputAS := new(workerfakes.FakeArtifactSource)
-			fakeLocalVolume = new(workerfakes.FakeVolume)
-			fakeLocalVolume.PathReturns("/fake/local/volume")
-			fakeLocalVolume.COWStrategyReturns(baggageclaim.COWStrategy{
-				Parent: new(baggageclaimfakes.FakeVolume),
-			})
-			fakeLocalInputAS.VolumeOnReturns(fakeLocalVolume, true, nil)
-			fakeLocalInput.SourceReturns(fakeLocalInputAS)
-
-			fakeBindMount = new(workerfakes.FakeBindMountSource)
-			fakeBindMount.VolumeOnReturns(garden.BindMount{
-				SrcPath: "some/source",
-				DstPath: "some/destination",
-				Mode:    garden.BindMountModeRO,
-			}, true, nil)
-
-			fakeRemoteInput = new(workerfakes.FakeInputSource)
-			fakeRemoteInput.DestinationPathReturns("/some/work-dir/remote-input")
-			fakeRemoteInputAS = new(workerfakes.FakeArtifactSource)
-			fakeRemoteInputAS.VolumeOnReturns(nil, false, nil)
-			fakeRemoteInput.SourceReturns(fakeRemoteInputAS)
-
-			fakeScratchVolume := new(workerfakes.FakeVolume)
-			fakeScratchVolume.PathReturns("/fake/scratch/volume")
-
-			fakeWorkdirVolume := new(workerfakes.FakeVolume)
-			fakeWorkdirVolume.PathReturns("/fake/work-dir/volume")
-
-			fakeOutputVolume = new(workerfakes.FakeVolume)
-			fakeOutputVolume.PathReturns("/fake/output/volume")
-
-			fakeLocalCOWVolume = new(workerfakes.FakeVolume)
-			fakeLocalCOWVolume.PathReturns("/fake/local/cow/volume")
-
-			fakeRemoteInputContainerVolume = new(workerfakes.FakeVolume)
-			fakeRemoteInputContainerVolume.PathReturns("/fake/remote/input/container/volume")
-
-			stubbedVolumes = map[string]*workerfakes.FakeVolume{
-				"/scratch":                    fakeScratchVolume,
-				"/some/work-dir":              fakeWorkdirVolume,
-				"/some/work-dir/local-input":  fakeLocalCOWVolume,
-				"/some/work-dir/remote-input": fakeRemoteInputContainerVolume,
-				"/some/work-dir/output":       fakeOutputVolume,
-			}
-
-			volumeSpecs = map[string]VolumeSpec{}
-
-			fakeVolumeClient.FindOrCreateCOWVolumeForContainerStub = func(logger lager.Logger, volumeSpec VolumeSpec, creatingContainer db.CreatingContainer, volume Volume, teamID int, mountPath string) (Volume, error) {
-				Expect(volume).To(Equal(fakeLocalVolume))
-
-				volume, found := stubbedVolumes[mountPath]
-				if !found {
-					panic("unknown container volume: " + mountPath)
-				}
-
-				volumeSpecs[mountPath] = volumeSpec
-
-				return volume, nil
-			}
-
-			fakeVolumeClient.FindOrCreateVolumeForContainerStub = func(logger lager.Logger, volumeSpec VolumeSpec, creatingContainer db.CreatingContainer, teamID int, mountPath string) (Volume, error) {
-				volume, found := stubbedVolumes[mountPath]
-				if !found {
-					panic("unknown container volume: " + mountPath)
-				}
-
-				volumeSpecs[mountPath] = volumeSpec
-
-				return volume, nil
-			}
-			ctx = context.Background()
-
-			fakeContainerOwner = new(dbfakes.FakeContainerOwner)
-
-			fakeImage.FetchForContainerReturns(FetchedImage{
-				Metadata: ImageMetadata{
-					Env: []string{"IMAGE=ENV"},
-				},
-				URL: "some-image-url",
-			}, nil)
-			containerMetadata = db.ContainerMetadata{
-				StepName: "some-step",
-			}
-
-			variables := template.StaticVariables{
-				"secret-image":  "super-secret-image",
-				"secret-source": "super-secret-source",
-			}
-
-			cpu := uint64(1024)
-			memory := uint64(1024)
-			containerSpec = ContainerSpec{
-				TeamID: 73410,
-
-				ImageSpec: ImageSpec{
-					ImageResource: &ImageResource{
-						Type:   "registry-image",
-						Source: creds.NewSource(variables, atc.Source{"some": "((secret-image))"}),
-					},
-				},
-
-				User: "some-user",
-				Env:  []string{"SOME=ENV"},
-
-				Dir: "/some/work-dir",
-
-				Inputs: []InputSource{
-					fakeLocalInput,
-					fakeRemoteInput,
-				},
-
-				Outputs: OutputPaths{
-					"some-output": "/some/work-dir/output",
-				},
-				BindMounts: []BindMountSource{
-					fakeBindMount,
-				},
-				Limits: ContainerLimits{
-					CPU:    &cpu,
-					Memory: &memory,
-				},
-			}
-
-			credsResourceTypes = creds.NewVersionedResourceTypes(variables, atc.VersionedResourceTypes{
-				{
-					ResourceType: atc.ResourceType{
-						Type:   "some-type",
-						Source: atc.Source{"some": "((secret-source))"},
-					},
-					Version: atc.Version{"some": "version"},
-				},
-			})
-
-			workerSpec = WorkerSpec{
-				TeamID:        73410,
-				ResourceType:  "registry-image",
-				ResourceTypes: credsResourceTypes,
-			}
-
-			fakeDBTeamFactory := new(dbfakes.FakeTeamFactory)
-			fakeDBTeam = new(dbfakes.FakeTeam)
-			fakeDBTeamFactory.GetByIDReturns(fakeDBTeam)
-			fakeGardenContainer = new(gardenfakes.FakeContainer)
-			fakeGardenClient.CreateReturns(fakeGardenContainer, nil)
-
-			containerProvider = NewContainerProvider(
-				fakeGardenClient,
-				fakeVolumeClient,
-				dbWorker,
-				fakeDBVolumeRepository,
-				fakeDBTeamFactory,
-				fakeLockFactory,
-			)
-
-		})
-
 		JustBeforeEach(func() {
-			gardenWorkerWithContainerProvider = NewGardenWorker(
-				fakeGardenClient,
-				containerProvider,
-				fakeVolumeClient,
-				fakeImageFactory,
-				dbWorker,
-				fakeLockFactory,
-				0,
-			)
-			findOrCreateContainer, findOrCreateErr = gardenWorkerWithContainerProvider.FindOrCreateContainer(
+			findOrCreateContainer, findOrCreateErr = gardenWorker.FindOrCreateContainer(
 				ctx,
 				logger,
 				fakeImageFetchingDelegate,
@@ -791,7 +936,7 @@ var _ = Describe("Worker", func() {
 				containerMetadata,
 				containerSpec,
 				workerSpec,
-				resourceTypes,
+				credsResourceTypes,
 			)
 		})
 		disasterErr := errors.New("disaster")
@@ -870,7 +1015,7 @@ var _ = Describe("Worker", func() {
 				var containerNotFoundErr error
 
 				BeforeEach(func() {
-					containerNotFoundErr = garden.ContainerNotFoundError{}
+					containerNotFoundErr = garden.ContainerNotFoundError{fakeCreatedContainer.Handle()}
 					fakeGardenClient.LookupReturns(nil, containerNotFoundErr)
 				})
 

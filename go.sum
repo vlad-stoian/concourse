@@ -23,8 +23,6 @@ github.com/Masterminds/squirrel v0.0.0-20190107164353-fa735ea14f09 h1:enWVS77aJk
 github.com/Masterminds/squirrel v0.0.0-20190107164353-fa735ea14f09/go.mod h1:yaPeOnPG5ZRwL9oKdTsO/prlkPbXWZlRVMQ/gGlzIuA=
 github.com/Microsoft/go-winio v0.4.11 h1:zoIOcVf0xPN1tnMVbTtEdI+P8OofVk3NObnwOQ6nK2Q=
 github.com/Microsoft/go-winio v0.4.11/go.mod h1:VhR8bwka0BXejwEJY73c50VrPtXAaKcyvVC4A4RozmA=
-github.com/NYTimes/gziphandler v1.0.1 h1:iLrQrdwjDd52kHDA5op2UBJFjmOb9g+7scBan4RN8F0=
-github.com/NYTimes/gziphandler v1.0.1/go.mod h1:3wb06e3pkSAbeQ52E9H9iFoQsEEwGN64994WTCIhntQ=
 github.com/NYTimes/gziphandler v1.1.0 h1:wkMjq4kSz11Zer+ncYWNBQDlj9Y5RLloY/Tb8yOj6gA=
 github.com/NYTimes/gziphandler v1.1.0/go.mod h1:EwmLXLwj3Rvq6vawd3hKEPUcQRyz2CDE1bov6dy8HNQ=
 github.com/Nvveen/Gotty v0.0.0-20120604004816-cd527374f1e5 h1:TngWCqHvy9oXAN6lEVMRuU21PR1EtLVZJmdB18Gu3Rw=
@@ -47,14 +45,6 @@ github.com/aryann/difflib v0.0.0-20170710044230-e206f873d14a h1:pv34s756C4pEXnjg
 github.com/aryann/difflib v0.0.0-20170710044230-e206f873d14a/go.mod h1:DAHtR1m6lCRdSC2Tm3DSWRPvIPr6xNKyeHdqDQSQT+A=
 github.com/asaskevich/govalidator v0.0.0-20180720115003-f9ffefc3facf h1:eg0MeVzsP1G42dRafH3vf+al2vQIJU0YHX+1Tw87oco=
 github.com/asaskevich/govalidator v0.0.0-20180720115003-f9ffefc3facf/go.mod h1:lB+ZfQJz7igIIfQNfa7Ml4HSf2uFQQRzpGGRXenZAgY=
-github.com/aws/aws-sdk-go v1.16.20 h1:fNQRk/PXr8B4rU3olSLeJPu2w6y79U+bTKTF6JRI5C8=
-github.com/aws/aws-sdk-go v1.16.20/go.mod h1:KmX6BPdI08NWTb3/sm4ZGu5ShLoqVDhKgpiN924inxo=
-github.com/aws/aws-sdk-go v1.16.29 h1:r3HbzZE47uBp8irmw/yTYDHKSC8qDemJWM6rgltavG0=
-github.com/aws/aws-sdk-go v1.16.29/go.mod h1:KmX6BPdI08NWTb3/sm4ZGu5ShLoqVDhKgpiN924inxo=
-github.com/aws/aws-sdk-go v1.16.30 h1:8QLugp2+gbixFN85sGSR97qvaXsjTOVUrA2bbsLCDOA=
-github.com/aws/aws-sdk-go v1.16.30/go.mod h1:KmX6BPdI08NWTb3/sm4ZGu5ShLoqVDhKgpiN924inxo=
-github.com/aws/aws-sdk-go v1.17.0 h1:+pbWEdKxH1qlLb07as1+auEVvx+IxkaDzQLwMzbK1tI=
-github.com/aws/aws-sdk-go v1.17.0/go.mod h1:KmX6BPdI08NWTb3/sm4ZGu5ShLoqVDhKgpiN924inxo=
 github.com/aws/aws-sdk-go v1.17.1 h1:RoOo57SetcPFGQ6vesLfWIpfnsbpEiuwiHq6aCvjrZw=
 github.com/aws/aws-sdk-go v1.17.1/go.mod h1:KmX6BPdI08NWTb3/sm4ZGu5ShLoqVDhKgpiN924inxo=
 github.com/beevik/etree v0.0.0-20161216042344-4cd0dd976db8 h1:83NNCRw/4bJwVOCZ5NKmRiqbffkDC/B2DFmKZ/EzU0c=
@@ -92,7 +82,6 @@ github.com/concourse/baggageclaim v1.3.4 h1:YNwWyQyyiSouLyoCYk3W7uECYz8A5IttpM9e
 github.com/concourse/baggageclaim v1.3.4/go.mod h1:9K1fnrJ8XyAm7OQtkdILDCj3bmCsnFkW/KCPBPyDy+s=
 github.com/concourse/dex v0.0.0-20181120155244-024cbea7e753 h1:1e4sAPr+xZn0LH8/yGQXdNEaCw4y7NGI3ikgAt0k7v0=
 github.com/concourse/dex v0.0.0-20181120155244-024cbea7e753/go.mod h1:KxaXUXusJaySm+1AjQmBwiyDe7wcR4lLV0GxwOcV598=
-github.com/concourse/flag v0.0.0-20180907155614-cb47f24fff1c h1:SwMKBc36jGTSS5/3AqVtbRjbGTvDfR3pJ5MkzfiYSas=
 github.com/concourse/flag v0.0.0-20180907155614-cb47f24fff1c/go.mod h1:ngs845OZCESOe8vgeK5fsCNIiS0vUSqB8MGQMS9+4og=
 github.com/concourse/flag v1.0.0 h1:XG+A/Y+8kNdNDUC9T+SQ55dZ1+xYQN6LNVBg3cGJ080=
 github.com/concourse/flag v1.0.0/go.mod h1:ngs845OZCESOe8vgeK5fsCNIiS0vUSqB8MGQMS9+4og=
@@ -338,7 +327,6 @@ github.com/peterbourgon/diskv v2.0.1+incompatible h1:UBdAOUP5p4RWqPBg048CAvpKN+v
 github.com/peterbourgon/diskv v2.0.1+incompatible/go.mod h1:uqqh8zWWbv1HBMNONnaR/tNboyR3/BZd58JJSHlUSCU=
 github.com/peterhellberg/link v1.0.0 h1:mUWkiegowUXEcmlb+ybF75Q/8D2Y0BjZtR8cxoKhaQo=
 github.com/peterhellberg/link v1.0.0/go.mod h1:gtSlOT4jmkY8P47hbTc8PTgiDDWpdPbFYl75keYyBB8=
-github.com/pkg/errors v0.8.0 h1:WdK/asTD0HN+q6hsWO3/vpuAkAr+tw6aNJNDFFf0+qw=
 github.com/pkg/errors v0.8.0/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
 github.com/pkg/errors v0.8.1 h1:iURUrRGxPUNPdy5/HRSm+Yj6okJ6UtLINN0Q9M4+h3I=
 github.com/pkg/errors v0.8.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
@@ -376,7 +364,6 @@ github.com/sirupsen/logrus v1.3.0/go.mod h1:LxeOpSwHxABJmUn/MG1IvRgCAasNZTLOkJPx
 github.com/skratchdot/open-golang v0.0.0-20160302144031-75fb7ed4208c h1:fyKiXKO1/I/B6Y2U8T7WdQGWzwehOuGIrljPtt7YTTI=
 github.com/skratchdot/open-golang v0.0.0-20160302144031-75fb7ed4208c/go.mod h1:sUM3LWHvSMaG192sy56D9F7CNvL7jUJVXoqM1QKLnog=
 github.com/spf13/cobra v0.0.0-20160615143614-bc81c21bd0d8/go.mod h1:1l0Ry5zgKvJasoi3XT1TypsSe7PqH0Sj9dhYf7v3XqQ=
-github.com/spf13/cobra v0.0.3 h1:ZlrZ4XsMRm04Fr5pSFxBgfND2EBVa1nLpiy1stUsX/8=
 github.com/spf13/cobra v0.0.3/go.mod h1:1l0Ry5zgKvJasoi3XT1TypsSe7PqH0Sj9dhYf7v3XqQ=
 github.com/spf13/pflag v0.0.0-20160610190902-367864438f1b/go.mod h1:DYY7MBk1bdzusC3SYhjObp+wFpr4gzcvqqNjLnInEg4=
 github.com/spf13/pflag v1.0.2/go.mod h1:DYY7MBk1bdzusC3SYhjObp+wFpr4gzcvqqNjLnInEg4=
@@ -386,7 +373,6 @@ github.com/square/certstrap v1.1.1 h1:GAzfXUcuior+dIWBo0OYODROz71P3mf0B9AQsVX0FS
 github.com/square/certstrap v1.1.1/go.mod h1:1+xoDwJbjCv1e3erNygZ/sHwgq8dr8CgQB3M5mMI6ds=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
 github.com/stretchr/objx v0.1.1/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
-github.com/stretchr/testify v1.2.2 h1:bSDNvY7ZPG5RlJ8otE/7V6gMiyenm9RtJ7IUVIAoJ1w=
 github.com/stretchr/testify v1.2.2/go.mod h1:a8OnRcib4nhh0OaRAV+Yts87kKdq0PP7pXfy6kDkUVs=
 github.com/stretchr/testify v1.3.0 h1:TivCn/peBQ7UY8ooIcPgZFpTNSz0Q2U6UrFlUfqbe0Q=
 github.com/stretchr/testify v1.3.0/go.mod h1:M5WIy9Dh21IEIfnGCwXGc5bZfKNJtfHm1UVUgZn+9EI=
@@ -421,7 +407,6 @@ golang.org/x/oauth2 v0.0.0-20160718223228-08c8d727d239/go.mod h1:N/0e6XlmueqKjAG
 golang.org/x/oauth2 v0.0.0-20180821212333-d2e6202438be h1:vEDujvNQGv4jgYKudGeI/+DAX4Jffq6hpD55MmoEvKs=
 golang.org/x/oauth2 v0.0.0-20180821212333-d2e6202438be/go.mod h1:N/0e6XlmueqKjAGxoOufVs8QHGRruUQn6yWY3a++T0U=
 golang.org/x/sync v0.0.0-20180314180146-1d60e4601c6f/go.mod h1:RxMgew5VJxzue5/jJTE5uejpjVlOe/izrB70Jof72aM=
-golang.org/x/sync v0.0.0-20181108010431-42b317875d0f h1:Bl/8QSvNqXvPGPGXa2z5xUTmV7VDcZyvRZ+QQXkXTZQ=
 golang.org/x/sync v0.0.0-20181108010431-42b317875d0f/go.mod h1:RxMgew5VJxzue5/jJTE5uejpjVlOe/izrB70Jof72aM=
 golang.org/x/sync v0.0.0-20181221193216-37e7f081c4d4 h1:YUO/7uOKsKeq9UokNS62b8FYywz3ker1l1vDZRCRefw=
 golang.org/x/sync v0.0.0-20181221193216-37e7f081c4d4/go.mod h1:RxMgew5VJxzue5/jJTE5uejpjVlOe/izrB70Jof72aM=

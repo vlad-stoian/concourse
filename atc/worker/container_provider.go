@@ -1,129 +1,67 @@
 package worker
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
-	"time"
 
 	"code.cloudfoundry.org/garden"
 	"code.cloudfoundry.org/lager"
+	"github.com/concourse/concourse/atc/creds"
 	"github.com/concourse/concourse/atc/db"
-	"github.com/concourse/concourse/atc/db/lock"
 )
 
-const creatingContainerRetryDelay = 1 * time.Second
-
-func NewContainerProvider(
-	gardenClient garden.Client,
-	volumeClient VolumeClient,
-	dbWorker db.Worker,
-	dbVolumeRepository db.VolumeRepository,
-	dbTeamFactory db.TeamFactory,
-	lockFactory lock.LockFactory,
-) ContainerProvider {
-
-	return &containerProvider{
-		gardenClient:       gardenClient,
-		volumeClient:       volumeClient,
-		dbVolumeRepository: dbVolumeRepository,
-		dbTeamFactory:      dbTeamFactory,
-		lockFactory:        lockFactory,
-		worker:             dbWorker,
-	}
-}
-
-//go:generate counterfeiter . ContainerProvider
-
-type ContainerProvider interface {
-	FindCreatedContainerByHandle(
-		logger lager.Logger,
-		handle string,
-		teamID int,
-	) (Container, bool, error)
-
-	//TODO: remove this from exposed methods?
-	ConstructGardenWorkerContainer(
-		logger lager.Logger,
-		createdContainer db.CreatedContainer,
-		gardenContainer garden.Container,
-	) (Container, error)
-
-	FindOrInitializeContainer(
-		logger lager.Logger,
-		owner db.ContainerOwner,
-		metadata db.ContainerMetadata,
-	) (db.CreatingContainer, db.CreatedContainer, error)
-
-	CreateGardenContainer(
-		containerSpec ContainerSpec,
-		fetchedImage FetchedImage,
-		creatingContainer db.CreatingContainer,
-		bindMounts []garden.BindMount,
-	) (garden.Container, error)
-}
-
-// TODO: Remove the ImageFactory from the containerProvider.
-// Currently, the imageFactory is only needed to create a garden
-// worker in createGardenContainer. Creating a garden worker here
-// is cyclical because the garden worker contains a containerProvider.
-// There is an ongoing refactor that is attempting to fix this.
-type containerProvider struct {
-	gardenClient       garden.Client
-	volumeClient       VolumeClient
-	dbVolumeRepository db.VolumeRepository
-	dbTeamFactory      db.TeamFactory
-
-	lockFactory lock.LockFactory
-
-	worker db.Worker
-}
-
-func (provider *containerProvider) FindOrInitializeContainer(
+func findOrInitializeContainer(
 	logger lager.Logger,
 	owner db.ContainerOwner,
 	metadata db.ContainerMetadata,
-) (db.CreatingContainer, db.CreatedContainer, error) {
+	worker db.Worker,
+) (db.CreatingContainer, db.CreatedContainer, string, error) {
 
-	creatingContainer, createdContainer, err := provider.worker.FindContainerOnWorker(owner)
+	creatingContainer, createdContainer, err := worker.FindContainerOnWorker(owner)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, "", err
 	}
 
-	// TODO: fix this
-	if creatingContainer != nil {
-		logger = logger.WithData(lager.Data{"container": creatingContainer.Handle()})
-		logger.Debug("found-container-in-db")
-		return creatingContainer, createdContainer, nil
+	var foundHandle string
+	switch {
+	case creatingContainer != nil:
+		foundHandle = creatingContainer.Handle()
+	case createdContainer != nil:
+		foundHandle = createdContainer.Handle()
 	}
 
-	if createdContainer != nil {
-		logger = logger.WithData(lager.Data{"container": createdContainer.Handle()})
+	if foundHandle != "" {
+		logger = logger.WithData(lager.Data{"container": foundHandle})
 		logger.Debug("found-container-in-db")
-		return creatingContainer, createdContainer, nil
+		return creatingContainer, createdContainer, foundHandle, nil
 	}
 
 	if creatingContainer == nil {
 		logger.Debug("creating-container-in-db")
-		creatingContainer, err = provider.worker.CreateContainer(
+		creatingContainer, err = worker.CreateContainer(
 			owner,
 			metadata,
 		)
 		if err != nil {
 			logger.Error("failed-to-create-container-in-db", err)
-			return nil, nil, err
+			return nil, nil, "", err
 		}
 
-		logger = logger.WithData(lager.Data{"container": creatingContainer.Handle()})
+		foundHandle = creatingContainer.Handle()
+		logger = logger.WithData(lager.Data{"container": foundHandle})
 		logger.Debug("created-creating-container-in-db")
 	}
-	return creatingContainer, nil, nil
+	return creatingContainer, nil, foundHandle, nil
 }
 
-func (provider *containerProvider) CreateGardenContainer(
+func createGardenContainer(
 	containerSpec ContainerSpec,
 	fetchedImage FetchedImage,
 	creatingContainer db.CreatingContainer,
 	bindMounts []garden.BindMount,
+	dbWorker db.Worker,
+	gardenClient garden.Client,
 ) (garden.Container, error) {
 
 	gardenProperties := garden.Properties{}
@@ -136,19 +74,19 @@ func (provider *containerProvider) CreateGardenContainer(
 
 	env := append(fetchedImage.Metadata.Env, containerSpec.Env...)
 
-	if provider.worker.HTTPProxyURL() != "" {
-		env = append(env, fmt.Sprintf("http_proxy=%s", provider.worker.HTTPProxyURL()))
+	if dbWorker.HTTPProxyURL() != "" {
+		env = append(env, fmt.Sprintf("http_proxy=%s", dbWorker.HTTPProxyURL()))
 	}
 
-	if provider.worker.HTTPSProxyURL() != "" {
-		env = append(env, fmt.Sprintf("https_proxy=%s", provider.worker.HTTPSProxyURL()))
+	if dbWorker.HTTPSProxyURL() != "" {
+		env = append(env, fmt.Sprintf("https_proxy=%s", dbWorker.HTTPSProxyURL()))
 	}
 
-	if provider.worker.NoProxy() != "" {
-		env = append(env, fmt.Sprintf("no_proxy=%s", provider.worker.NoProxy()))
+	if dbWorker.NoProxy() != "" {
+		env = append(env, fmt.Sprintf("no_proxy=%s", dbWorker.NoProxy()))
 	}
 
-	return provider.gardenClient.Create(garden.ContainerSpec{
+	return gardenClient.Create(garden.ContainerSpec{
 		Handle:     creatingContainer.Handle(),
 		RootFSPath: fetchedImage.URL,
 		Privileged: fetchedImage.Privileged,
@@ -159,12 +97,17 @@ func (provider *containerProvider) CreateGardenContainer(
 	})
 }
 
-func (p *containerProvider) FindCreatedContainerByHandle(
+func findCreatedContainerByHandle(
 	logger lager.Logger,
 	handle string,
 	teamID int,
+	factory db.TeamFactory,
+	gardenClient garden.Client,
+	volumeRepo db.VolumeRepository,
+	volumeClient VolumeClient,
+	workerName string,
 ) (Container, bool, error) {
-	gardenContainer, err := p.gardenClient.Lookup(handle)
+	gardenContainer, err := gardenClient.Lookup(handle)
 	if err != nil {
 		if _, ok := err.(garden.ContainerNotFoundError); ok {
 			logger.Info("container-not-found")
@@ -175,7 +118,7 @@ func (p *containerProvider) FindCreatedContainerByHandle(
 		return nil, false, err
 	}
 
-	createdContainer, found, err := p.dbTeamFactory.GetByID(teamID).FindCreatedContainerByHandle(handle)
+	createdContainer, found, err := factory.GetByID(teamID).FindCreatedContainerByHandle(handle)
 	if err != nil {
 		logger.Error("failed-to-lookup-in-db", err)
 		return nil, false, err
@@ -185,7 +128,7 @@ func (p *containerProvider) FindCreatedContainerByHandle(
 		return nil, false, nil
 	}
 
-	createdVolumes, err := p.dbVolumeRepository.FindVolumesForContainer(createdContainer)
+	createdVolumes, err := volumeRepo.FindVolumesForContainer(createdContainer)
 	if err != nil {
 		return nil, false, err
 	}
@@ -195,9 +138,9 @@ func (p *containerProvider) FindCreatedContainerByHandle(
 		gardenContainer,
 		createdContainer,
 		createdVolumes,
-		p.gardenClient,
-		p.volumeClient,
-		p.worker.Name(),
+		gardenClient,
+		volumeClient,
+		workerName,
 	)
 
 	if err != nil {
@@ -208,26 +151,55 @@ func (p *containerProvider) FindCreatedContainerByHandle(
 	return container, true, nil
 }
 
-func (p *containerProvider) ConstructGardenWorkerContainer(
+func constructGardenWorkerContainer(
 	logger lager.Logger,
 	createdContainer db.CreatedContainer,
 	gardenContainer garden.Container,
+	repository db.VolumeRepository,
+	gardenClient garden.Client,
+	volumeClient VolumeClient,
+	workerName string,
 ) (Container, error) {
-	createdVolumes, err := p.dbVolumeRepository.FindVolumesForContainer(createdContainer)
+	createdVolumes, err := repository.FindVolumesForContainer(createdContainer)
 	if err != nil {
 		logger.Error("failed-to-find-container-volumes", err)
 		return nil, err
 	}
-
 	return newGardenWorkerContainer(
 		logger,
 		gardenContainer,
 		createdContainer,
 		createdVolumes,
-		p.gardenClient,
-		p.volumeClient,
-		p.worker.Name(),
+		gardenClient,
+		volumeClient,
+		workerName,
 	)
+}
+
+func (worker *gardenWorker) fetchImageForContainer(
+	ctx context.Context,
+	logger lager.Logger,
+	spec ImageSpec,
+	teamID int,
+	delegate ImageFetchingDelegate,
+	resourceTypes creds.VersionedResourceTypes,
+	creatingContainer db.CreatingContainer,
+) (FetchedImage, error) {
+	image, err := worker.imageFactory.GetImage(
+		logger,
+		worker,
+		worker.volumeClient,
+		spec,
+		teamID,
+		delegate,
+		resourceTypes,
+	)
+	if err != nil {
+		return FetchedImage{}, err
+	}
+
+	logger.Debug("fetching-image")
+	return image.FetchForContainer(ctx, logger, creatingContainer)
 }
 
 func getDestinationPathsFromInputs(inputs []InputSource) []string {

@@ -4,13 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/concourse/baggageclaim"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/concourse/baggageclaim"
-	"github.com/concourse/concourse/atc/db/lock"
 	"github.com/concourse/concourse/atc/metric"
 
 	"code.cloudfoundry.org/garden"
@@ -58,9 +57,9 @@ type gardenWorker struct {
 	gardenClient      garden.Client
 	volumeClient      VolumeClient
 	imageFactory      ImageFactory
-	containerProvider ContainerProvider
+	volumeRepo db.VolumeRepository
+	dbTeamFactory db.TeamFactory
 	dbWorker          db.Worker
-	lockFactory       lock.LockFactory
 	buildContainers   int
 }
 
@@ -69,23 +68,21 @@ type gardenWorker struct {
 // A Garden Worker is comprised of: db.Worker, garden Client, container provider, and a volume client
 func NewGardenWorker(
 	gardenClient garden.Client,
-	containerProvider ContainerProvider,
+	volumeRepository db.VolumeRepository,
 	volumeClient VolumeClient,
 	imageFactory ImageFactory,
+	dbTeamFactory db.TeamFactory,
 	dbWorker db.Worker,
-	lockFactory lock.LockFactory,
 	numBuildContainers int,
-	// TODO: numBuildContainers is only needed for placement strategy but this
-	// method is called in ContainerProvider.FindOrCreateContainer as well and
-	// hence we pass in 0 values for numBuildContainers everywhere.
 ) Worker {
+
 	return &gardenWorker{
 		gardenClient:      gardenClient,
 		volumeClient:      volumeClient,
 		imageFactory:      imageFactory,
-		containerProvider: containerProvider,
+		volumeRepo: volumeRepository,
+		dbTeamFactory: dbTeamFactory,
 		dbWorker:          dbWorker,
-		lockFactory:       lockFactory,
 		buildContainers:   numBuildContainers,
 	}
 }
@@ -173,40 +170,40 @@ func (worker *gardenWorker) FindOrCreateContainer(
 		gardenContainer   garden.Container
 		createdContainer  db.CreatedContainer
 		creatingContainer db.CreatingContainer
+		containerHandle string
 		err               error
 	)
 
-	creatingContainer, createdContainer, err = worker.containerProvider.FindOrInitializeContainer(logger, owner, metadata)
+	creatingContainer, createdContainer, containerHandle, err = findOrInitializeContainer(logger, owner, metadata, worker.dbWorker)
 	if err != nil {
 		logger.Error("failed-to-find-container-in-db", err)
 		return nil, err
 	}
 
-	if createdContainer != nil {
-		logger = logger.WithData(lager.Data{"container": createdContainer.Handle()})
-
-		logger.Debug("found-created-container-in-db")
-
-		// TODO: combining this and the second call below causes db_worker_provider_test.line 491 test to break. WHY?
-		gardenContainer, err = worker.gardenClient.Lookup(createdContainer.Handle())
-		if err != nil {
-			logger.Error("failed-to-lookup-created-container-in-garden", err)
-			return nil, err
-		}
-
-		return worker.containerProvider.ConstructGardenWorkerContainer(
-			logger,
-			createdContainer,
-			gardenContainer,
-		)
-	}
-
-	gardenContainer, err = worker.gardenClient.Lookup(creatingContainer.Handle())
+	gardenContainer, err = worker.gardenClient.Lookup(containerHandle)
 	if err != nil {
 		if _, ok := err.(garden.ContainerNotFoundError); !ok {
 			logger.Error("failed-to-lookup-creating-container-in-garden", err)
 			return nil, err
 		}
+	}
+
+	if createdContainer != nil {
+		logger = logger.WithData(lager.Data{"container": containerHandle})
+		logger.Debug("found-created-container-in-db")
+
+		if gardenContainer == nil {
+			return nil, garden.ContainerNotFoundError{containerHandle}
+		}
+		return constructGardenWorkerContainer(
+			logger,
+			createdContainer,
+			gardenContainer,
+			worker.volumeRepo,
+			worker.gardenClient,
+			worker.volumeClient,
+			worker.Name(),
+		)
 	}
 
 	if gardenContainer == nil {
@@ -234,7 +231,7 @@ func (worker *gardenWorker) FindOrCreateContainer(
 
 		logger.Debug("creating-garden-container")
 
-		gardenContainer, err = worker.containerProvider.CreateGardenContainer(containerSpec, fetchedImage, creatingContainer, bindMounts)
+		gardenContainer, err = createGardenContainer(containerSpec, fetchedImage, creatingContainer, bindMounts, worker.dbWorker, worker.gardenClient)
 		if err != nil {
 			_, failedErr := creatingContainer.Failed()
 			if failedErr != nil {
@@ -255,45 +252,129 @@ func (worker *gardenWorker) FindOrCreateContainer(
 	if err != nil {
 		logger.Error("failed-to-mark-container-as-created", err)
 
-		_ = worker.gardenClient.Destroy(creatingContainer.Handle())
+		_ = worker.gardenClient.Destroy(containerHandle)
 
 		return nil, err
 	}
 
 	logger.Debug("created-container-in-db")
 
-	return worker.containerProvider.ConstructGardenWorkerContainer(
+	return constructGardenWorkerContainer(
 		logger,
 		createdContainer,
 		gardenContainer,
+		worker.volumeRepo,
+		worker.gardenClient,
+		worker.volumeClient,
+		worker.Name(),
 	)
 
 }
 
-func (worker *gardenWorker) fetchImageForContainer(
-	ctx context.Context,
-	logger lager.Logger,
-	spec ImageSpec,
-	teamID int,
-	delegate ImageFetchingDelegate,
-	resourceTypes creds.VersionedResourceTypes,
-	creatingContainer db.CreatingContainer,
-) (FetchedImage, error) {
-	image, err := worker.imageFactory.GetImage(
-		logger,
-		worker,
-		worker.volumeClient,
-		spec,
-		teamID,
-		delegate,
-		resourceTypes,
-	)
-	if err != nil {
-		return FetchedImage{}, err
+func (worker *gardenWorker) FindContainerByHandle(logger lager.Logger, teamID int, handle string) (Container, bool, error) {
+	return findCreatedContainerByHandle(logger, handle, teamID, worker.dbTeamFactory, worker.gardenClient, worker.volumeRepo, worker.volumeClient, worker.Name())
+}
+
+// TODO: are these required on the Worker object?
+// does the caller already have the db.Worker available?
+func (worker *gardenWorker) ActiveContainers() int {
+	return worker.dbWorker.ActiveContainers()
+}
+
+func (worker *gardenWorker) ActiveVolumes() int {
+	return worker.dbWorker.ActiveVolumes()
+}
+
+func (worker *gardenWorker) Name() string {
+	return worker.dbWorker.Name()
+}
+
+func (worker *gardenWorker) ResourceTypes() []atc.WorkerResourceType {
+	return worker.dbWorker.ResourceTypes()
+}
+
+func (worker *gardenWorker) Tags() atc.Tags {
+	return worker.dbWorker.Tags()
+}
+
+func (worker *gardenWorker) Ephemeral() bool {
+	return worker.dbWorker.Ephemeral()
+}
+
+func (worker *gardenWorker) BuildContainers() int {
+	return worker.buildContainers
+}
+
+func (worker *gardenWorker) Satisfying(logger lager.Logger, spec WorkerSpec) (Worker, error) {
+	workerTeamID := worker.dbWorker.TeamID()
+	workerResourceTypes := worker.dbWorker.ResourceTypes()
+
+	if spec.TeamID != workerTeamID && workerTeamID != 0 {
+		return nil, ErrTeamMismatch
 	}
 
-	logger.Debug("fetching-image")
-	return image.FetchForContainer(ctx, logger, creatingContainer)
+	if spec.ResourceType != "" {
+		underlyingType := determineUnderlyingTypeName(spec.ResourceType, spec.ResourceTypes)
+
+		matchedType := false
+		for _, t := range workerResourceTypes {
+			if t.Type == underlyingType {
+				matchedType = true
+				break
+			}
+		}
+
+		if !matchedType {
+			return nil, ErrUnsupportedResourceType
+		}
+	}
+
+	if spec.Platform != "" {
+		if spec.Platform != worker.dbWorker.Platform() {
+			return nil, ErrIncompatiblePlatform
+		}
+	}
+
+	if !worker.tagsMatch(spec.Tags) {
+		return nil, ErrMismatchedTags
+	}
+
+	return worker, nil
+}
+
+func determineUnderlyingTypeName(typeName string, resourceTypes creds.VersionedResourceTypes) string {
+	resourceTypesMap := make(map[string]creds.VersionedResourceType)
+	for _, resourceType := range resourceTypes {
+		resourceTypesMap[resourceType.Name] = resourceType
+	}
+	underlyingTypeName := typeName
+	underlyingType, ok := resourceTypesMap[underlyingTypeName]
+	for ok {
+		underlyingTypeName = underlyingType.Type
+		underlyingType, ok = resourceTypesMap[underlyingTypeName]
+		delete(resourceTypesMap, underlyingTypeName)
+	}
+	return underlyingTypeName
+}
+
+func (worker *gardenWorker) Description() string {
+	messages := []string{
+		fmt.Sprintf("platform '%s'", worker.dbWorker.Platform()),
+	}
+
+	for _, tag := range worker.dbWorker.Tags() {
+		messages = append(messages, fmt.Sprintf("tag '%s'", tag))
+	}
+
+	return strings.Join(messages, ", ")
+}
+
+func (worker *gardenWorker) IsOwnedByTeam() bool {
+	return worker.dbWorker.TeamID() != 0
+}
+
+func (worker *gardenWorker) Uptime() time.Duration {
+	return time.Since(time.Unix(worker.dbWorker.StartTime(), 0))
 }
 
 func (worker *gardenWorker) getBindMounts(volumeMounts []VolumeMount, bindMountSources []BindMountSource) ([]garden.BindMount, error) {
@@ -460,112 +541,6 @@ func (worker *gardenWorker) createVolumes(logger lager.Logger, isPrivileged bool
 
 	volumeMounts = append(volumeMounts, ioVolumeMounts...)
 	return volumeMounts, nil
-}
-
-func (worker *gardenWorker) FindContainerByHandle(logger lager.Logger, teamID int, handle string) (Container, bool, error) {
-	return worker.containerProvider.FindCreatedContainerByHandle(logger, handle, teamID)
-}
-
-// TODO: are these required on the Worker object?
-// does the caller already have the db.Worker available?
-func (worker *gardenWorker) ActiveContainers() int {
-	return worker.dbWorker.ActiveContainers()
-}
-
-func (worker *gardenWorker) ActiveVolumes() int {
-	return worker.dbWorker.ActiveVolumes()
-}
-
-func (worker *gardenWorker) Name() string {
-	return worker.dbWorker.Name()
-}
-
-func (worker *gardenWorker) ResourceTypes() []atc.WorkerResourceType {
-	return worker.dbWorker.ResourceTypes()
-}
-
-func (worker *gardenWorker) Tags() atc.Tags {
-	return worker.dbWorker.Tags()
-}
-
-func (worker *gardenWorker) Ephemeral() bool {
-	return worker.dbWorker.Ephemeral()
-}
-
-func (worker *gardenWorker) BuildContainers() int {
-	return worker.buildContainers
-}
-
-func (worker *gardenWorker) Satisfying(logger lager.Logger, spec WorkerSpec) (Worker, error) {
-	workerTeamID := worker.dbWorker.TeamID()
-	workerResourceTypes := worker.dbWorker.ResourceTypes()
-
-	if spec.TeamID != workerTeamID && workerTeamID != 0 {
-		return nil, ErrTeamMismatch
-	}
-
-	if spec.ResourceType != "" {
-		underlyingType := determineUnderlyingTypeName(spec.ResourceType, spec.ResourceTypes)
-
-		matchedType := false
-		for _, t := range workerResourceTypes {
-			if t.Type == underlyingType {
-				matchedType = true
-				break
-			}
-		}
-
-		if !matchedType {
-			return nil, ErrUnsupportedResourceType
-		}
-	}
-
-	if spec.Platform != "" {
-		if spec.Platform != worker.dbWorker.Platform() {
-			return nil, ErrIncompatiblePlatform
-		}
-	}
-
-	if !worker.tagsMatch(spec.Tags) {
-		return nil, ErrMismatchedTags
-	}
-
-	return worker, nil
-}
-
-func determineUnderlyingTypeName(typeName string, resourceTypes creds.VersionedResourceTypes) string {
-	resourceTypesMap := make(map[string]creds.VersionedResourceType)
-	for _, resourceType := range resourceTypes {
-		resourceTypesMap[resourceType.Name] = resourceType
-	}
-	underlyingTypeName := typeName
-	underlyingType, ok := resourceTypesMap[underlyingTypeName]
-	for ok {
-		underlyingTypeName = underlyingType.Type
-		underlyingType, ok = resourceTypesMap[underlyingTypeName]
-		delete(resourceTypesMap, underlyingTypeName)
-	}
-	return underlyingTypeName
-}
-
-func (worker *gardenWorker) Description() string {
-	messages := []string{
-		fmt.Sprintf("platform '%s'", worker.dbWorker.Platform()),
-	}
-
-	for _, tag := range worker.dbWorker.Tags() {
-		messages = append(messages, fmt.Sprintf("tag '%s'", tag))
-	}
-
-	return strings.Join(messages, ", ")
-}
-
-func (worker *gardenWorker) IsOwnedByTeam() bool {
-	return worker.dbWorker.TeamID() != 0
-}
-
-func (worker *gardenWorker) Uptime() time.Duration {
-	return time.Since(time.Unix(worker.dbWorker.StartTime(), 0))
 }
 
 func (worker *gardenWorker) tagsMatch(tags []string) bool {
