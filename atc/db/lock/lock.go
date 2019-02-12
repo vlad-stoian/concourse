@@ -44,10 +44,6 @@ func NewVolumeCreatingLockID(volumeID int) LockID {
 	return LockID{LockTypeVolumeCreating, volumeID}
 }
 
-func NewContainerCreatingLockID(containerID int) LockID {
-	return LockID{LockTypeContainerCreating, containerID}
-}
-
 func NewDatabaseMigrationLockID() LockID {
 	return LockID{LockTypeDatabaseMigration}
 }
