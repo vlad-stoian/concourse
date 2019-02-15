@@ -1,24 +1,29 @@
 package worker
 
 import (
-	"context"
 	"fmt"
 	"path/filepath"
 
 	"code.cloudfoundry.org/garden"
 	"code.cloudfoundry.org/lager"
-	"github.com/concourse/concourse/atc/creds"
 	"github.com/concourse/concourse/atc/db"
 )
 
-func findOrInitializeContainer(
+type workerHelper struct {
+	gardenClient  garden.Client
+	volumeClient  VolumeClient
+	volumeRepo    db.VolumeRepository
+	dbTeamFactory db.TeamFactory
+	dbWorker      db.Worker
+}
+
+func (w workerHelper) findOrInitializeContainer(
 	logger lager.Logger,
 	owner db.ContainerOwner,
 	metadata db.ContainerMetadata,
-	worker db.Worker,
 ) (db.CreatingContainer, db.CreatedContainer, string, error) {
 
-	creatingContainer, createdContainer, err := worker.FindContainerOnWorker(owner)
+	creatingContainer, createdContainer, err := w.dbWorker.FindContainerOnWorker(owner)
 	if err != nil {
 		return nil, nil, "", err
 	}
@@ -39,7 +44,7 @@ func findOrInitializeContainer(
 
 	if creatingContainer == nil {
 		logger.Debug("creating-container-in-db")
-		creatingContainer, err = worker.CreateContainer(
+		creatingContainer, err = w.dbWorker.CreateContainer(
 			owner,
 			metadata,
 		)
@@ -55,13 +60,11 @@ func findOrInitializeContainer(
 	return creatingContainer, nil, foundHandle, nil
 }
 
-func createGardenContainer(
+func (w workerHelper) createGardenContainer(
 	containerSpec ContainerSpec,
 	fetchedImage FetchedImage,
 	creatingContainer db.CreatingContainer,
 	bindMounts []garden.BindMount,
-	dbWorker db.Worker,
-	gardenClient garden.Client,
 ) (garden.Container, error) {
 
 	gardenProperties := garden.Properties{}
@@ -74,19 +77,19 @@ func createGardenContainer(
 
 	env := append(fetchedImage.Metadata.Env, containerSpec.Env...)
 
-	if dbWorker.HTTPProxyURL() != "" {
-		env = append(env, fmt.Sprintf("http_proxy=%s", dbWorker.HTTPProxyURL()))
+	if w.dbWorker.HTTPProxyURL() != "" {
+		env = append(env, fmt.Sprintf("http_proxy=%s", w.dbWorker.HTTPProxyURL()))
 	}
 
-	if dbWorker.HTTPSProxyURL() != "" {
-		env = append(env, fmt.Sprintf("https_proxy=%s", dbWorker.HTTPSProxyURL()))
+	if w.dbWorker.HTTPSProxyURL() != "" {
+		env = append(env, fmt.Sprintf("https_proxy=%s", w.dbWorker.HTTPSProxyURL()))
 	}
 
-	if dbWorker.NoProxy() != "" {
-		env = append(env, fmt.Sprintf("no_proxy=%s", dbWorker.NoProxy()))
+	if w.dbWorker.NoProxy() != "" {
+		env = append(env, fmt.Sprintf("no_proxy=%s", w.dbWorker.NoProxy()))
 	}
 
-	return gardenClient.Create(garden.ContainerSpec{
+	return w.gardenClient.Create(garden.ContainerSpec{
 		Handle:     creatingContainer.Handle(),
 		RootFSPath: fetchedImage.URL,
 		Privileged: fetchedImage.Privileged,
@@ -97,17 +100,12 @@ func createGardenContainer(
 	})
 }
 
-func findCreatedContainerByHandle(
+func (w workerHelper) findCreatedContainerByHandle(
 	logger lager.Logger,
 	handle string,
 	teamID int,
-	factory db.TeamFactory,
-	gardenClient garden.Client,
-	volumeRepo db.VolumeRepository,
-	volumeClient VolumeClient,
-	workerName string,
 ) (Container, bool, error) {
-	gardenContainer, err := gardenClient.Lookup(handle)
+	gardenContainer, err := w.gardenClient.Lookup(handle)
 	if err != nil {
 		if _, ok := err.(garden.ContainerNotFoundError); ok {
 			logger.Info("container-not-found")
@@ -118,7 +116,7 @@ func findCreatedContainerByHandle(
 		return nil, false, err
 	}
 
-	createdContainer, found, err := factory.GetByID(teamID).FindCreatedContainerByHandle(handle)
+	createdContainer, found, err := w.dbTeamFactory.GetByID(teamID).FindCreatedContainerByHandle(handle)
 	if err != nil {
 		logger.Error("failed-to-lookup-in-db", err)
 		return nil, false, err
@@ -128,7 +126,7 @@ func findCreatedContainerByHandle(
 		return nil, false, nil
 	}
 
-	createdVolumes, err := volumeRepo.FindVolumesForContainer(createdContainer)
+	createdVolumes, err := w.volumeRepo.FindVolumesForContainer(createdContainer)
 	if err != nil {
 		return nil, false, err
 	}
@@ -138,9 +136,9 @@ func findCreatedContainerByHandle(
 		gardenContainer,
 		createdContainer,
 		createdVolumes,
-		gardenClient,
-		volumeClient,
-		workerName,
+		w.gardenClient,
+		w.volumeClient,
+		w.dbWorker.Name(),
 	)
 
 	if err != nil {
@@ -151,16 +149,12 @@ func findCreatedContainerByHandle(
 	return container, true, nil
 }
 
-func constructGardenWorkerContainer(
+func (w workerHelper) constructGardenWorkerContainer(
 	logger lager.Logger,
 	createdContainer db.CreatedContainer,
 	gardenContainer garden.Container,
-	repository db.VolumeRepository,
-	gardenClient garden.Client,
-	volumeClient VolumeClient,
-	workerName string,
 ) (Container, error) {
-	createdVolumes, err := repository.FindVolumesForContainer(createdContainer)
+	createdVolumes, err := w.volumeRepo.FindVolumesForContainer(createdContainer)
 	if err != nil {
 		logger.Error("failed-to-find-container-volumes", err)
 		return nil, err
@@ -170,36 +164,10 @@ func constructGardenWorkerContainer(
 		gardenContainer,
 		createdContainer,
 		createdVolumes,
-		gardenClient,
-		volumeClient,
-		workerName,
+		w.gardenClient,
+		w.volumeClient,
+		w.dbWorker.Name(),
 	)
-}
-
-func (worker *gardenWorker) fetchImageForContainer(
-	ctx context.Context,
-	logger lager.Logger,
-	spec ImageSpec,
-	teamID int,
-	delegate ImageFetchingDelegate,
-	resourceTypes creds.VersionedResourceTypes,
-	creatingContainer db.CreatingContainer,
-) (FetchedImage, error) {
-	image, err := worker.imageFactory.GetImage(
-		logger,
-		worker,
-		worker.volumeClient,
-		spec,
-		teamID,
-		delegate,
-		resourceTypes,
-	)
-	if err != nil {
-		return FetchedImage{}, err
-	}
-
-	logger.Debug("fetching-image")
-	return image.FetchForContainer(ctx, logger, creatingContainer)
 }
 
 func getDestinationPathsFromInputs(inputs []InputSource) []string {

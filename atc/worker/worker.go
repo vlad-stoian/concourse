@@ -49,13 +49,14 @@ type Worker interface {
 }
 
 type gardenWorker struct {
-	gardenClient      garden.Client
-	volumeClient      VolumeClient
-	imageFactory      ImageFactory
-	volumeRepo db.VolumeRepository
-	dbTeamFactory db.TeamFactory
-	dbWorker          db.Worker
-	buildContainers   int
+	gardenClient    garden.Client
+	volumeClient    VolumeClient
+	imageFactory    ImageFactory
+	volumeRepo      db.VolumeRepository
+	dbTeamFactory   db.TeamFactory
+	dbWorker        db.Worker
+	buildContainers int
+	helper          workerHelper
 }
 
 // NewGardenWorker constructs a Worker using the gardenWorker runtime implementation and allows container and volume
@@ -71,14 +72,22 @@ func NewGardenWorker(
 	numBuildContainers int,
 ) Worker {
 
-	return &gardenWorker{
-		gardenClient:      gardenClient,
-		volumeClient:      volumeClient,
-		imageFactory:      imageFactory,
-		volumeRepo: volumeRepository,
+	workerHelper := workerHelper{
+		gardenClient:  gardenClient,
+		volumeClient:  volumeClient,
+		volumeRepo:    volumeRepository,
 		dbTeamFactory: dbTeamFactory,
-		dbWorker:          dbWorker,
-		buildContainers:   numBuildContainers,
+		dbWorker:      dbWorker,
+	}
+	return &gardenWorker{
+		gardenClient:    gardenClient,
+		volumeClient:    volumeClient,
+		imageFactory:    imageFactory,
+		volumeRepo:      volumeRepository,
+		dbTeamFactory:   dbTeamFactory,
+		dbWorker:        dbWorker,
+		buildContainers: numBuildContainers,
+		helper:          workerHelper,
 	}
 }
 
@@ -169,7 +178,7 @@ func (worker *gardenWorker) FindOrCreateContainer(
 		err               error
 	)
 
-	creatingContainer, createdContainer, containerHandle, err = findOrInitializeContainer(logger, owner, metadata, worker.dbWorker)
+	creatingContainer, createdContainer, containerHandle, err = worker.helper.findOrInitializeContainer(logger, owner, metadata)
 	if err != nil {
 		logger.Error("failed-to-find-container-in-db", err)
 		return nil, err
@@ -190,14 +199,10 @@ func (worker *gardenWorker) FindOrCreateContainer(
 		if gardenContainer == nil {
 			return nil, garden.ContainerNotFoundError{containerHandle}
 		}
-		return constructGardenWorkerContainer(
+		return worker.helper.constructGardenWorkerContainer(
 			logger,
 			createdContainer,
 			gardenContainer,
-			worker.volumeRepo,
-			worker.gardenClient,
-			worker.volumeClient,
-			worker.Name(),
 		)
 	}
 
@@ -226,7 +231,7 @@ func (worker *gardenWorker) FindOrCreateContainer(
 
 		logger.Debug("creating-garden-container")
 
-		gardenContainer, err = createGardenContainer(containerSpec, fetchedImage, creatingContainer, bindMounts, worker.dbWorker, worker.gardenClient)
+		gardenContainer, err = worker.helper.createGardenContainer(containerSpec, fetchedImage, creatingContainer, bindMounts)
 		if err != nil {
 			_, failedErr := creatingContainer.Failed()
 			if failedErr != nil {
@@ -254,20 +259,16 @@ func (worker *gardenWorker) FindOrCreateContainer(
 
 	logger.Debug("created-container-in-db")
 
-	return constructGardenWorkerContainer(
+	return worker.helper.constructGardenWorkerContainer(
 		logger,
 		createdContainer,
 		gardenContainer,
-		worker.volumeRepo,
-		worker.gardenClient,
-		worker.volumeClient,
-		worker.Name(),
 	)
 
 }
 
 func (worker *gardenWorker) FindContainerByHandle(logger lager.Logger, teamID int, handle string) (Container, bool, error) {
-	return findCreatedContainerByHandle(logger, handle, teamID, worker.dbTeamFactory, worker.gardenClient, worker.volumeRepo, worker.volumeClient, worker.Name())
+	return worker.helper.findCreatedContainerByHandle(logger, handle, teamID)
 }
 
 func (worker *gardenWorker) Name() string {
@@ -514,6 +515,32 @@ func (worker *gardenWorker) createVolumes(logger lager.Logger, isPrivileged bool
 
 	volumeMounts = append(volumeMounts, ioVolumeMounts...)
 	return volumeMounts, nil
+}
+
+func (worker *gardenWorker) fetchImageForContainer(
+	ctx context.Context,
+	logger lager.Logger,
+	spec ImageSpec,
+	teamID int,
+	delegate ImageFetchingDelegate,
+	resourceTypes creds.VersionedResourceTypes,
+	creatingContainer db.CreatingContainer,
+) (FetchedImage, error) {
+	image, err := worker.imageFactory.GetImage(
+		logger,
+		worker,
+		worker.volumeClient,
+		spec,
+		teamID,
+		delegate,
+		resourceTypes,
+	)
+	if err != nil {
+		return FetchedImage{}, err
+	}
+
+	logger.Debug("fetching-image")
+	return image.FetchForContainer(ctx, logger, creatingContainer)
 }
 
 func (worker *gardenWorker) tagsMatch(tags []string) bool {
