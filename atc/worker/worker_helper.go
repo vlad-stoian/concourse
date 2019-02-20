@@ -42,28 +42,28 @@ func (w workerHelper) findOrInitializeContainer(
 		return creatingContainer, createdContainer, foundHandle, nil
 	}
 
-	if creatingContainer == nil {
-		logger.Debug("creating-container-in-db")
-		creatingContainer, err = w.dbWorker.CreateContainer(
-			owner,
-			metadata,
-		)
-		if err != nil {
-			logger.Error("failed-to-create-container-in-db", err)
-			return nil, nil, "", err
-		}
-
-		foundHandle = creatingContainer.Handle()
-		logger = logger.WithData(lager.Data{"container": foundHandle})
-		logger.Debug("created-creating-container-in-db")
+	// No foundHandle means no container in db
+	logger.Debug("creating-container-in-db")
+	creatingContainer, err = w.dbWorker.CreateContainer(
+		owner,
+		metadata,
+	)
+	if err != nil {
+		logger.Error("failed-to-create-container-in-db", err)
+		return nil, nil, "", err
 	}
+
+	foundHandle = creatingContainer.Handle()
+	logger = logger.WithData(lager.Data{"container": foundHandle})
+	logger.Debug("created-creating-container-in-db")
+
 	return creatingContainer, nil, foundHandle, nil
 }
 
 func (w workerHelper) createGardenContainer(
 	containerSpec ContainerSpec,
 	fetchedImage FetchedImage,
-	creatingContainer db.CreatingContainer,
+	handleToCreate string,
 	bindMounts []garden.BindMount,
 ) (garden.Container, error) {
 
@@ -90,7 +90,7 @@ func (w workerHelper) createGardenContainer(
 	}
 
 	return w.gardenClient.Create(garden.ContainerSpec{
-		Handle:     creatingContainer.Handle(),
+		Handle:     handleToCreate,
 		RootFSPath: fetchedImage.URL,
 		Privileged: fetchedImage.Privileged,
 		BindMounts: bindMounts,
@@ -100,54 +100,6 @@ func (w workerHelper) createGardenContainer(
 	})
 }
 
-func (w workerHelper) findCreatedContainerByHandle(
-	logger lager.Logger,
-	handle string,
-	teamID int,
-) (Container, bool, error) {
-	gardenContainer, err := w.gardenClient.Lookup(handle)
-	if err != nil {
-		if _, ok := err.(garden.ContainerNotFoundError); ok {
-			logger.Info("container-not-found")
-			return nil, false, nil
-		}
-
-		logger.Error("failed-to-lookup-on-garden", err)
-		return nil, false, err
-	}
-
-	createdContainer, found, err := w.dbTeamFactory.GetByID(teamID).FindCreatedContainerByHandle(handle)
-	if err != nil {
-		logger.Error("failed-to-lookup-in-db", err)
-		return nil, false, err
-	}
-
-	if !found {
-		return nil, false, nil
-	}
-
-	createdVolumes, err := w.volumeRepo.FindVolumesForContainer(createdContainer)
-	if err != nil {
-		return nil, false, err
-	}
-
-	container, err := newGardenWorkerContainer(
-		logger,
-		gardenContainer,
-		createdContainer,
-		createdVolumes,
-		w.gardenClient,
-		w.volumeClient,
-		w.dbWorker.Name(),
-	)
-
-	if err != nil {
-		logger.Error("failed-to-construct-container", err)
-		return nil, false, err
-	}
-
-	return container, true, nil
-}
 
 func (w workerHelper) constructGardenWorkerContainer(
 	logger lager.Logger,
@@ -170,6 +122,16 @@ func (w workerHelper) constructGardenWorkerContainer(
 	)
 }
 
+func anyMountTo(path string, destinationPaths []string) bool {
+	for _, destinationPath := range destinationPaths {
+		if filepath.Clean(destinationPath) == filepath.Clean(path) {
+			return true
+		}
+	}
+
+	return false
+}
+
 func getDestinationPathsFromInputs(inputs []InputSource) []string {
 	destinationPaths := make([]string, len(inputs))
 
@@ -181,10 +143,8 @@ func getDestinationPathsFromInputs(inputs []InputSource) []string {
 }
 
 func getDestinationPathsFromOutputs(outputs OutputPaths) []string {
-	var (
-		idx              = 0
-		destinationPaths = make([]string, len(outputs))
-	)
+	idx              := 0
+	destinationPaths := make([]string, len(outputs))
 
 	for _, destinationPath := range outputs {
 		destinationPaths[idx] = destinationPath
@@ -192,14 +152,4 @@ func getDestinationPathsFromOutputs(outputs OutputPaths) []string {
 	}
 
 	return destinationPaths
-}
-
-func anyMountTo(path string, destinationPaths []string) bool {
-	for _, destinationPath := range destinationPaths {
-		if filepath.Clean(destinationPath) == filepath.Clean(path) {
-			return true
-		}
-	}
-
-	return false
 }
