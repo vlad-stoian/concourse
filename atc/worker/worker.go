@@ -53,18 +53,18 @@ type Worker interface {
 
 	CertsVolume(lager.Logger) (volume Volume, found bool, err error)
 	LookupVolume(lager.Logger, string) (Volume, bool, error)
-	CreateVolume(logger lager.Logger, spec VolumeSpec, teamID int, volumeType db.VolumeType) (Volume, error)
+	CreateVolume(logger lager.Logger, spec VolumeSpec, teamID int, artifactID int, volumeType db.VolumeType) (Volume, error)
 
 	GardenClient() garden.Client
 }
 
 type gardenWorker struct {
-	gardenClient      garden.Client
-	volumeClient      VolumeClient
-	imageFactory      ImageFactory
-	dbWorker          db.Worker
-	buildContainers   int
-	helper workerHelper
+	gardenClient    garden.Client
+	volumeClient    VolumeClient
+	imageFactory    ImageFactory
+	dbWorker        db.Worker
+	buildContainers int
+	helper          workerHelper
 }
 
 // NewGardenWorker constructs a Worker using the gardenWorker runtime implementation and allows container and volume
@@ -91,12 +91,12 @@ func NewGardenWorker(
 	}
 
 	return &gardenWorker{
-		gardenClient:      gardenClient,
-		volumeClient:      volumeClient,
-		imageFactory:      imageFactory,
-		dbWorker:          dbWorker,
-		buildContainers:   numBuildContainers,
-		helper:	workerHelper,
+		gardenClient:    gardenClient,
+		volumeClient:    volumeClient,
+		imageFactory:    imageFactory,
+		dbWorker:        dbWorker,
+		buildContainers: numBuildContainers,
+		helper:          workerHelper,
 	}
 }
 
@@ -158,8 +158,8 @@ func (worker *gardenWorker) CertsVolume(logger lager.Logger) (Volume, bool, erro
 	return worker.volumeClient.FindOrCreateVolumeForResourceCerts(logger.Session("find-or-create"))
 }
 
-func (worker *gardenWorker) CreateVolume(logger lager.Logger, spec VolumeSpec, teamID int, volumeType db.VolumeType) (Volume, error) {
-	return worker.volumeClient.CreateVolume(logger.Session("find-or-create"), spec, teamID, worker.dbWorker.Name(), volumeType)
+func (worker *gardenWorker) CreateVolume(logger lager.Logger, spec VolumeSpec, teamID int, artifactID int, volumeType db.VolumeType) (Volume, error) {
+	return worker.volumeClient.CreateVolume(logger.Session("find-or-create"), spec, teamID, artifactID, worker.dbWorker.Name(), volumeType)
 }
 
 func (worker *gardenWorker) LookupVolume(logger lager.Logger, handle string) (Volume, bool, error) {
@@ -180,7 +180,7 @@ func (worker *gardenWorker) FindOrCreateContainer(
 		gardenContainer   garden.Container
 		createdContainer  db.CreatedContainer
 		creatingContainer db.CreatingContainer
-		containerHandle string
+		containerHandle   string
 		err               error
 	)
 

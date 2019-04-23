@@ -31,6 +31,7 @@ var (
 	dbConn                              db.Conn
 	buildFactory                        db.BuildFactory
 	volumeRepository                    db.VolumeRepository
+	artifactLifecycle                   db.WorkerArtifactLifecycle
 	containerRepository                 db.ContainerRepository
 	teamFactory                         db.TeamFactory
 	workerFactory                       db.WorkerFactory
@@ -94,6 +95,7 @@ var _ = BeforeEach(func() {
 
 	buildFactory = db.NewBuildFactory(dbConn, lockFactory, 5*time.Minute)
 	volumeRepository = db.NewVolumeRepository(dbConn)
+	artifactLifecycle = db.NewArtifactLifecycle(dbConn)
 	containerRepository = db.NewContainerRepository(dbConn)
 	teamFactory = db.NewTeamFactory(dbConn, lockFactory)
 	workerFactory = db.NewWorkerFactory(dbConn)

@@ -5,7 +5,9 @@ import (
 
 	"code.cloudfoundry.org/lager/lagertest"
 	"github.com/concourse/baggageclaim"
+
 	"github.com/concourse/concourse/atc/db"
+	"github.com/concourse/concourse/atc/db/dbfakes"
 	"github.com/concourse/concourse/atc/worker"
 	"github.com/concourse/concourse/atc/worker/workerfakes"
 
@@ -15,18 +17,20 @@ import (
 
 var _ = Describe("Client", func() {
 	var (
-		logger       *lagertest.TestLogger
-		fakePool     *workerfakes.FakePool
-		fakeProvider *workerfakes.FakeWorkerProvider
-		client       worker.Client
+		logger               *lagertest.TestLogger
+		fakePool             *workerfakes.FakePool
+		fakeWorkerProvider   *workerfakes.FakeWorkerProvider
+		fakeArtifactProvider *dbfakes.FakeArtifactProvider
+		client               worker.Client
 	)
 
 	BeforeEach(func() {
 		logger = lagertest.NewTestLogger("test")
 		fakePool = new(workerfakes.FakePool)
-		fakeProvider = new(workerfakes.FakeWorkerProvider)
+		fakeWorkerProvider = new(workerfakes.FakeWorkerProvider)
+		fakeArtifactProvider = new(dbfakes.FakeArtifactProvider)
 
-		client = worker.NewClient(fakePool, fakeProvider)
+		client = worker.NewClient(fakePool, fakeWorkerProvider, fakeArtifactProvider)
 	})
 
 	Describe("FindContainer", func() {
@@ -46,7 +50,7 @@ var _ = Describe("Client", func() {
 
 		Context("when looking up the worker errors", func() {
 			BeforeEach(func() {
-				fakeProvider.FindWorkerForContainerReturns(nil, false, errors.New("nope"))
+				fakeWorkerProvider.FindWorkerForContainerReturns(nil, false, errors.New("nope"))
 			})
 
 			It("errors", func() {
@@ -56,7 +60,7 @@ var _ = Describe("Client", func() {
 
 		Context("when worker is not found", func() {
 			BeforeEach(func() {
-				fakeProvider.FindWorkerForContainerReturns(nil, false, nil)
+				fakeWorkerProvider.FindWorkerForContainerReturns(nil, false, nil)
 			})
 
 			It("returns not found", func() {
@@ -71,7 +75,7 @@ var _ = Describe("Client", func() {
 
 			BeforeEach(func() {
 				fakeWorker = new(workerfakes.FakeWorker)
-				fakeProvider.FindWorkerForContainerReturns(fakeWorker, true, nil)
+				fakeWorkerProvider.FindWorkerForContainerReturns(fakeWorker, true, nil)
 
 				fakeContainer = new(workerfakes.FakeContainer)
 				fakeWorker.FindContainerByHandleReturns(fakeContainer, true, nil)
@@ -105,7 +109,7 @@ var _ = Describe("Client", func() {
 
 		Context("when looking up the worker errors", func() {
 			BeforeEach(func() {
-				fakeProvider.FindWorkerForVolumeReturns(nil, false, errors.New("nope"))
+				fakeWorkerProvider.FindWorkerForVolumeReturns(nil, false, errors.New("nope"))
 			})
 
 			It("errors", func() {
@@ -115,7 +119,7 @@ var _ = Describe("Client", func() {
 
 		Context("when worker is not found", func() {
 			BeforeEach(func() {
-				fakeProvider.FindWorkerForVolumeReturns(nil, false, nil)
+				fakeWorkerProvider.FindWorkerForVolumeReturns(nil, false, nil)
 			})
 
 			It("returns not found", func() {
@@ -130,7 +134,7 @@ var _ = Describe("Client", func() {
 
 			BeforeEach(func() {
 				fakeWorker = new(workerfakes.FakeWorker)
-				fakeProvider.FindWorkerForVolumeReturns(fakeWorker, true, nil)
+				fakeWorkerProvider.FindWorkerForVolumeReturns(fakeWorker, true, nil)
 
 				fakeVolume = new(workerfakes.FakeVolume)
 				fakeWorker.LookupVolumeReturns(fakeVolume, true, nil)
@@ -186,12 +190,23 @@ var _ = Describe("Client", func() {
 			It("creates the volume on the worker", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(fakeWorker.CreateVolumeCallCount()).To(Equal(1))
-				l, spec, id, t := fakeWorker.CreateVolumeArgsForCall(0)
+				l, spec, id, _, t := fakeWorker.CreateVolumeArgsForCall(0)
 				Expect(l).To(Equal(logger))
 				Expect(spec).To(Equal(volumeSpec))
 				Expect(id).To(Equal(1))
 				Expect(t).To(Equal(volumeType))
 			})
+		})
+	})
+
+	Describe("CreateArtifact", func() {
+		It("creates an artifact", func() {
+			_, err := client.CreateArtifact(logger, "some-artifact")
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(fakeArtifactProvider.CreateArtifactCallCount()).To(Equal(1))
+			nameArg := fakeArtifactProvider.CreateArtifactArgsForCall(0)
+			Expect(nameArg).To(Equal("some-artifact"))
 		})
 	})
 })

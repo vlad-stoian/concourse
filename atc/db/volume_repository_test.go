@@ -211,7 +211,10 @@ var _ = Describe("VolumeFactory", func() {
 			err = resourceCacheVolumeCreated.InitializeResourceCache(usedResourceCache)
 			Expect(err).NotTo(HaveOccurred())
 
-			artifactVolume, err := volumeRepository.CreateVolume(defaultTeam.ID(), defaultWorker.Name(), db.VolumeTypeArtifact)
+			artifact, err := artifactLifecycle.CreateArtifact("blah")
+			Expect(err).NotTo(HaveOccurred())
+
+			artifactVolume, err := volumeRepository.CreateVolume(defaultTeam.ID(), artifact.ID(), defaultWorker.Name(), db.VolumeTypeArtifact)
 			Expect(err).NotTo(HaveOccurred())
 			expectedCreatedHandles = append(expectedCreatedHandles, artifactVolume.Handle())
 
@@ -262,6 +265,10 @@ var _ = Describe("VolumeFactory", func() {
 			deleted, err = usedResourceCache.Destroy(deleteTx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(deleted).To(BeTrue())
+
+			_, err = deleteTx.Exec("DELETE FROM worker_artifacts WHERE id=$1", artifact.ID())
+			Expect(err).NotTo(HaveOccurred())
+
 			Expect(deleteTx.Commit()).To(Succeed())
 
 			createdContainer, err := creatingContainer.Created()
@@ -416,16 +423,23 @@ var _ = Describe("VolumeFactory", func() {
 	})
 
 	Describe("CreateVolume", func() {
-		It("creates a CreatingVolume of the given type with a teamID", func() {
-			volume, err := volumeRepository.CreateVolume(defaultTeam.ID(), defaultWorker.Name(), db.VolumeTypeArtifact)
+		It("creates a CreatingVolume of the given type with a teamID and artifactID", func() {
+			artifact, err := artifactLifecycle.CreateArtifact("jon-snows-artifact")
 			Expect(err).NotTo(HaveOccurred())
+
+			volume, err := volumeRepository.CreateVolume(defaultTeam.ID(), artifact.ID(), defaultWorker.Name(), db.VolumeTypeArtifact)
+			Expect(err).NotTo(HaveOccurred())
+
 			var teamID int
 			var workerName string
-			err = psql.Select("team_id, worker_name").From("volumes").
-				Where(sq.Eq{"handle": volume.Handle()}).RunWith(dbConn).QueryRow().Scan(&teamID, &workerName)
+			var workerArtifactID int
+			err = psql.Select("team_id, worker_name, worker_artifact_id").From("volumes").
+				Where(sq.Eq{"handle": volume.Handle()}).RunWith(dbConn).QueryRow().Scan(&teamID, &workerName, &workerArtifactID)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(teamID).To(Equal(defaultTeam.ID()))
 			Expect(workerName).To(Equal(defaultWorker.Name()))
+			Expect(workerArtifactID).To(Equal(artifact.ID()))
+
 		})
 	})
 
@@ -909,6 +923,55 @@ var _ = Describe("VolumeFactory", func() {
 
 			It("does not return an error", func() {
 				Expect(err).ToNot(HaveOccurred())
+			})
+		})
+	})
+
+	Describe("FindArtifactVolume", func() {
+		var (
+			artifact       db.WorkerArtifact
+			creatingVolume db.CreatingVolume
+			createdVolume  db.CreatedVolume
+			err            error
+		)
+		BeforeEach(func() {
+			artifact, err = artifactLifecycle.CreateArtifact("dummy-artifact")
+			Expect(err).ToNot(HaveOccurred())
+		})
+		Context("When the creating volume exists", func() {
+			BeforeEach(func() {
+				creatingVolume, err = volumeRepository.CreateVolume(defaultTeam.ID(), artifact.ID(), defaultWorker.Name(), db.VolumeTypeArtifact)
+				Expect(err).ToNot(HaveOccurred())
+			})
+			It("returns the CreatingVolume associated with the ArtifactID", func() {
+				foundCreatingVolume, foundCreatedVolume, err := volumeRepository.FindArtifactVolume(artifact.ID())
+				Expect(err).ToNot(HaveOccurred())
+				Expect(foundCreatedVolume).To(BeNil())
+				Expect(foundCreatingVolume.Handle()).To(Equal(creatingVolume.Handle()))
+			})
+		})
+		Context("when the created volume exists", func() {
+			BeforeEach(func() {
+				creatingVolume, err = volumeRepository.CreateVolume(defaultTeam.ID(), artifact.ID(), defaultWorker.Name(), db.VolumeTypeArtifact)
+				Expect(err).ToNot(HaveOccurred())
+
+				createdVolume, err = creatingVolume.Created()
+				Expect(err).ToNot(HaveOccurred())
+			})
+			It("returns the CreatedVolume associated with the ArtifactID", func() {
+				foundCreatingVolume, foundCreatedVolume, err := volumeRepository.FindArtifactVolume(artifact.ID())
+				Expect(err).ToNot(HaveOccurred())
+				Expect(foundCreatingVolume).To(BeNil())
+				Expect(foundCreatedVolume.Handle()).To(Equal(createdVolume.Handle()))
+			})
+		})
+
+		Context("when the volume does not exist", func() {
+			It("returns false and no error", func() {
+				foundCreatingVolume, foundCreatedVolume, err := volumeRepository.FindArtifactVolume(artifact.ID())
+				Expect(err).ToNot(HaveOccurred())
+				Expect(foundCreatingVolume).To(BeNil())
+				Expect(foundCreatedVolume).To(BeNil())
 			})
 		})
 	})

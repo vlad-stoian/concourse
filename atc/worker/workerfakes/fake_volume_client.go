@@ -10,14 +10,15 @@ import (
 )
 
 type FakeVolumeClient struct {
-	CreateVolumeStub        func(lager.Logger, worker.VolumeSpec, int, string, db.VolumeType) (worker.Volume, error)
+	CreateVolumeStub        func(lager.Logger, worker.VolumeSpec, int, int, string, db.VolumeType) (worker.Volume, error)
 	createVolumeMutex       sync.RWMutex
 	createVolumeArgsForCall []struct {
 		arg1 lager.Logger
 		arg2 worker.VolumeSpec
 		arg3 int
-		arg4 string
-		arg5 db.VolumeType
+		arg4 int
+		arg5 string
+		arg6 db.VolumeType
 	}
 	createVolumeReturns struct {
 		result1 worker.Volume
@@ -166,20 +167,21 @@ type FakeVolumeClient struct {
 	invocationsMutex sync.RWMutex
 }
 
-func (fake *FakeVolumeClient) CreateVolume(arg1 lager.Logger, arg2 worker.VolumeSpec, arg3 int, arg4 string, arg5 db.VolumeType) (worker.Volume, error) {
+func (fake *FakeVolumeClient) CreateVolume(arg1 lager.Logger, arg2 worker.VolumeSpec, arg3 int, arg4 int, arg5 string, arg6 db.VolumeType) (worker.Volume, error) {
 	fake.createVolumeMutex.Lock()
 	ret, specificReturn := fake.createVolumeReturnsOnCall[len(fake.createVolumeArgsForCall)]
 	fake.createVolumeArgsForCall = append(fake.createVolumeArgsForCall, struct {
 		arg1 lager.Logger
 		arg2 worker.VolumeSpec
 		arg3 int
-		arg4 string
-		arg5 db.VolumeType
-	}{arg1, arg2, arg3, arg4, arg5})
-	fake.recordInvocation("CreateVolume", []interface{}{arg1, arg2, arg3, arg4, arg5})
+		arg4 int
+		arg5 string
+		arg6 db.VolumeType
+	}{arg1, arg2, arg3, arg4, arg5, arg6})
+	fake.recordInvocation("CreateVolume", []interface{}{arg1, arg2, arg3, arg4, arg5, arg6})
 	fake.createVolumeMutex.Unlock()
 	if fake.CreateVolumeStub != nil {
-		return fake.CreateVolumeStub(arg1, arg2, arg3, arg4, arg5)
+		return fake.CreateVolumeStub(arg1, arg2, arg3, arg4, arg5, arg6)
 	}
 	if specificReturn {
 		return ret.result1, ret.result2
@@ -194,17 +196,17 @@ func (fake *FakeVolumeClient) CreateVolumeCallCount() int {
 	return len(fake.createVolumeArgsForCall)
 }
 
-func (fake *FakeVolumeClient) CreateVolumeCalls(stub func(lager.Logger, worker.VolumeSpec, int, string, db.VolumeType) (worker.Volume, error)) {
+func (fake *FakeVolumeClient) CreateVolumeCalls(stub func(lager.Logger, worker.VolumeSpec, int, int, string, db.VolumeType) (worker.Volume, error)) {
 	fake.createVolumeMutex.Lock()
 	defer fake.createVolumeMutex.Unlock()
 	fake.CreateVolumeStub = stub
 }
 
-func (fake *FakeVolumeClient) CreateVolumeArgsForCall(i int) (lager.Logger, worker.VolumeSpec, int, string, db.VolumeType) {
+func (fake *FakeVolumeClient) CreateVolumeArgsForCall(i int) (lager.Logger, worker.VolumeSpec, int, int, string, db.VolumeType) {
 	fake.createVolumeMutex.RLock()
 	defer fake.createVolumeMutex.RUnlock()
 	argsForCall := fake.createVolumeArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4, argsForCall.arg5
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4, argsForCall.arg5, argsForCall.arg6
 }
 
 func (fake *FakeVolumeClient) CreateVolumeReturns(result1 worker.Volume, result2 error) {

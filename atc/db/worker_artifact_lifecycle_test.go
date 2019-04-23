@@ -1,7 +1,14 @@
 package db_test
 
 import (
+	"time"
+
+	"github.com/lib/pq"
+
 	"github.com/concourse/concourse/atc/db"
+
+	"database/sql"
+
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
@@ -51,5 +58,25 @@ var _ = Describe("WorkerArtifactLifecycle", func() {
 				Expect(count).To(Equal(1))
 			})
 		})
+	})
+
+	Describe("CreateArtifact", func() {
+		var (
+			artifactID   sql.NullInt64
+			artifactName sql.NullString
+			createdAt    pq.NullTime
+		)
+		It("adds an artifact row to the DB", func() {
+			currentTime := time.Now()
+			artifact, err := workerArtifactLifecycle.CreateArtifact("some-artifact")
+			Expect(err).ToNot(HaveOccurred())
+
+			err = dbConn.QueryRow("SELECT id, name, created_at FROM worker_artifacts").Scan(&artifactID, &artifactName, &createdAt)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(artifactID.Int64).To(BeEquivalentTo(artifact.ID()))
+			Expect(artifactName.String).To(Equal(artifact.Name()))
+			Expect(createdAt.Time.After(currentTime))
+		})
+
 	})
 })

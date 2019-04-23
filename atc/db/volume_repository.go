@@ -6,7 +6,7 @@ import (
 	"time"
 
 	sq "github.com/Masterminds/squirrel"
-	"github.com/nu7hatch/gouuid"
+	uuid "github.com/nu7hatch/gouuid"
 )
 
 //go:generate counterfeiter . VolumeRepository
@@ -22,6 +22,8 @@ type VolumeRepository interface {
 
 	FindResourceCacheVolume(workerName string, resourceCache UsedResourceCache) (CreatedVolume, bool, error)
 
+	FindArtifactVolume(artifactID int) (CreatingVolume, CreatedVolume, error)
+
 	FindTaskCacheVolume(teamID int, uwtc *UsedWorkerTaskCache) (CreatingVolume, CreatedVolume, error)
 	CreateTaskCacheVolume(teamID int, uwtc *UsedWorkerTaskCache) (CreatingVolume, error)
 
@@ -35,7 +37,7 @@ type VolumeRepository interface {
 
 	GetDestroyingVolumes(workerName string) ([]string, error)
 
-	CreateVolume(int, string, VolumeType) (CreatingVolume, error)
+	CreateVolume(int, int, string, VolumeType) (CreatingVolume, error)
 	FindCreatedVolume(handle string) (CreatedVolume, bool, error)
 
 	RemoveDestroyingVolumes(workerName string, handles []string) (int, error)
@@ -255,12 +257,13 @@ func (repository *volumeRepository) CreateBaseResourceTypeVolume(uwbrt *UsedWork
 	return volume, nil
 }
 
-func (repository *volumeRepository) CreateVolume(teamID int, workerName string, volumeType VolumeType) (CreatingVolume, error) {
+func (repository *volumeRepository) CreateVolume(teamID int, artifactID int, workerName string, volumeType VolumeType) (CreatingVolume, error) {
 	volume, err := repository.createVolume(
 		0,
 		workerName,
 		map[string]interface{}{
-			"team_id": teamID,
+			"team_id":            teamID,
+			"worker_artifact_id": artifactID,
 		},
 		volumeType,
 	)
@@ -409,6 +412,12 @@ func (repository *volumeRepository) FindResourceCacheVolume(workerName string, r
 	}
 
 	return createdVolume, true, nil
+}
+
+func (repository *volumeRepository) FindArtifactVolume(artifactID int) (CreatingVolume, CreatedVolume, error) {
+	return repository.findVolume(0, "", map[string]interface{}{
+		"v.worker_artifact_id": artifactID,
+	})
 }
 
 func (repository *volumeRepository) FindCreatedVolume(handle string) (CreatedVolume, bool, error) {

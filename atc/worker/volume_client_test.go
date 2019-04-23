@@ -648,7 +648,7 @@ var _ = Describe("VolumeClient", func() {
 		})
 
 		JustBeforeEach(func() {
-			workerVolume, err = volumeClient.CreateVolume(testLogger, worker.VolumeSpec{}, 42, "some-mount", db.VolumeTypeArtifact)
+			workerVolume, err = volumeClient.CreateVolume(testLogger, worker.VolumeSpec{}, 42, 123, "some-mount", db.VolumeTypeArtifact)
 		})
 
 		Context("when trying to create a new volume", func() {

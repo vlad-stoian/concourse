@@ -2,15 +2,16 @@ package worker_test
 
 import (
 	"bytes"
-	"code.cloudfoundry.org/garden"
-	"code.cloudfoundry.org/lager"
-	"fmt"
-	"github.com/concourse/baggageclaim"
-	"github.com/concourse/baggageclaim/baggageclaimfakes"
-	"io/ioutil"
-	"time"
 	"context"
 	"errors"
+	"fmt"
+	"io/ioutil"
+	"time"
+
+	"code.cloudfoundry.org/garden"
+	"code.cloudfoundry.org/lager"
+	"github.com/concourse/baggageclaim"
+	"github.com/concourse/baggageclaim/baggageclaimfakes"
 
 	"code.cloudfoundry.org/garden/gardenfakes"
 	"code.cloudfoundry.org/lager/lagertest"
@@ -28,7 +29,7 @@ import (
 
 var _ = Describe("Worker", func() {
 	var (
-		logger *lagertest.TestLogger
+		logger                    *lagertest.TestLogger
 		fakeVolumeClient          *workerfakes.FakeVolumeClient
 		activeContainers          int
 		resourceTypes             []atc.WorkerResourceType
@@ -573,7 +574,7 @@ var _ = Describe("Worker", func() {
 		})
 
 		JustBeforeEach(func() {
-			volume, err = gardenWorker.CreateVolume(logger, VolumeSpec{}, 42, db.VolumeTypeArtifact)
+			volume, err = gardenWorker.CreateVolume(logger, VolumeSpec{}, 42, 123, db.VolumeTypeArtifact)
 		})
 
 		It("calls the volume client", func() {
