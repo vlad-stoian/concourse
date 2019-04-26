@@ -110,7 +110,6 @@ var _ = Describe("Worker", func() {
 
 		fakeDBVolumeRepository = new(dbfakes.FakeVolumeRepository)
 
-
 		fakeDBTeamFactory = new(dbfakes.FakeTeamFactory)
 		fakeDBTeam = new(dbfakes.FakeTeam)
 		fakeDBTeamFactory.GetByIDReturns(fakeDBTeam)

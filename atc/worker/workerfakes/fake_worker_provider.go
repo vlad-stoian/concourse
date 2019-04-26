@@ -11,6 +11,23 @@ import (
 )
 
 type FakeWorkerProvider struct {
+	FindWorkerForArtifactStub        func(lager.Logger, int, int) (worker.Worker, bool, error)
+	findWorkerForArtifactMutex       sync.RWMutex
+	findWorkerForArtifactArgsForCall []struct {
+		arg1 lager.Logger
+		arg2 int
+		arg3 int
+	}
+	findWorkerForArtifactReturns struct {
+		result1 worker.Worker
+		result2 bool
+		result3 error
+	}
+	findWorkerForArtifactReturnsOnCall map[int]struct {
+		result1 worker.Worker
+		result2 bool
+		result3 error
+	}
 	FindWorkerForContainerStub        func(lager.Logger, int, string) (worker.Worker, bool, error)
 	findWorkerForContainerMutex       sync.RWMutex
 	findWorkerForContainerArgsForCall []struct {
@@ -88,6 +105,74 @@ type FakeWorkerProvider struct {
 	}
 	invocations      map[string][][]interface{}
 	invocationsMutex sync.RWMutex
+}
+
+func (fake *FakeWorkerProvider) FindWorkerForArtifact(arg1 lager.Logger, arg2 int, arg3 int) (worker.Worker, bool, error) {
+	fake.findWorkerForArtifactMutex.Lock()
+	ret, specificReturn := fake.findWorkerForArtifactReturnsOnCall[len(fake.findWorkerForArtifactArgsForCall)]
+	fake.findWorkerForArtifactArgsForCall = append(fake.findWorkerForArtifactArgsForCall, struct {
+		arg1 lager.Logger
+		arg2 int
+		arg3 int
+	}{arg1, arg2, arg3})
+	fake.recordInvocation("FindWorkerForArtifact", []interface{}{arg1, arg2, arg3})
+	fake.findWorkerForArtifactMutex.Unlock()
+	if fake.FindWorkerForArtifactStub != nil {
+		return fake.FindWorkerForArtifactStub(arg1, arg2, arg3)
+	}
+	if specificReturn {
+		return ret.result1, ret.result2, ret.result3
+	}
+	fakeReturns := fake.findWorkerForArtifactReturns
+	return fakeReturns.result1, fakeReturns.result2, fakeReturns.result3
+}
+
+func (fake *FakeWorkerProvider) FindWorkerForArtifactCallCount() int {
+	fake.findWorkerForArtifactMutex.RLock()
+	defer fake.findWorkerForArtifactMutex.RUnlock()
+	return len(fake.findWorkerForArtifactArgsForCall)
+}
+
+func (fake *FakeWorkerProvider) FindWorkerForArtifactCalls(stub func(lager.Logger, int, int) (worker.Worker, bool, error)) {
+	fake.findWorkerForArtifactMutex.Lock()
+	defer fake.findWorkerForArtifactMutex.Unlock()
+	fake.FindWorkerForArtifactStub = stub
+}
+
+func (fake *FakeWorkerProvider) FindWorkerForArtifactArgsForCall(i int) (lager.Logger, int, int) {
+	fake.findWorkerForArtifactMutex.RLock()
+	defer fake.findWorkerForArtifactMutex.RUnlock()
+	argsForCall := fake.findWorkerForArtifactArgsForCall[i]
+	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+}
+
+func (fake *FakeWorkerProvider) FindWorkerForArtifactReturns(result1 worker.Worker, result2 bool, result3 error) {
+	fake.findWorkerForArtifactMutex.Lock()
+	defer fake.findWorkerForArtifactMutex.Unlock()
+	fake.FindWorkerForArtifactStub = nil
+	fake.findWorkerForArtifactReturns = struct {
+		result1 worker.Worker
+		result2 bool
+		result3 error
+	}{result1, result2, result3}
+}
+
+func (fake *FakeWorkerProvider) FindWorkerForArtifactReturnsOnCall(i int, result1 worker.Worker, result2 bool, result3 error) {
+	fake.findWorkerForArtifactMutex.Lock()
+	defer fake.findWorkerForArtifactMutex.Unlock()
+	fake.FindWorkerForArtifactStub = nil
+	if fake.findWorkerForArtifactReturnsOnCall == nil {
+		fake.findWorkerForArtifactReturnsOnCall = make(map[int]struct {
+			result1 worker.Worker
+			result2 bool
+			result3 error
+		})
+	}
+	fake.findWorkerForArtifactReturnsOnCall[i] = struct {
+		result1 worker.Worker
+		result2 bool
+		result3 error
+	}{result1, result2, result3}
 }
 
 func (fake *FakeWorkerProvider) FindWorkerForContainer(arg1 lager.Logger, arg2 int, arg3 string) (worker.Worker, bool, error) {
@@ -419,6 +504,8 @@ func (fake *FakeWorkerProvider) RunningWorkersReturnsOnCall(i int, result1 []wor
 func (fake *FakeWorkerProvider) Invocations() map[string][][]interface{} {
 	fake.invocationsMutex.RLock()
 	defer fake.invocationsMutex.RUnlock()
+	fake.findWorkerForArtifactMutex.RLock()
+	defer fake.findWorkerForArtifactMutex.RUnlock()
 	fake.findWorkerForContainerMutex.RLock()
 	defer fake.findWorkerForContainerMutex.RUnlock()
 	fake.findWorkerForVolumeMutex.RLock()

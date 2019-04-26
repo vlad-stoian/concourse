@@ -529,6 +529,7 @@ func (cmd *RunCommand) constructAPIMembers(
 	dbWorkerBaseResourceTypeFactory := db.NewWorkerBaseResourceTypeFactory(dbConn)
 	dbWorkerTaskCacheFactory := db.NewWorkerTaskCacheFactory(dbConn)
 	dbVolumeRepository := db.NewVolumeRepository(dbConn)
+	dbArtifactLifecycle := db.NewArtifactLifecycle(dbConn)
 	dbWorkerFactory := db.NewWorkerFactory(dbConn)
 	workerVersion, err := workerVersion()
 	if err != nil {
@@ -544,6 +545,7 @@ func (cmd *RunCommand) constructAPIMembers(
 		dbWorkerBaseResourceTypeFactory,
 		dbWorkerTaskCacheFactory,
 		dbVolumeRepository,
+		dbArtifactLifecycle,
 		teamFactory,
 		dbWorkerFactory,
 		workerVersion,
@@ -706,6 +708,7 @@ func (cmd *RunCommand) constructBackendMembers(
 	dbWorkerBaseResourceTypeFactory := db.NewWorkerBaseResourceTypeFactory(dbConn)
 	dbWorkerTaskCacheFactory := db.NewWorkerTaskCacheFactory(dbConn)
 	dbVolumeRepository := db.NewVolumeRepository(dbConn)
+	dbArtifactLifecycle := db.NewArtifactLifecycle(dbConn)
 	dbWorkerFactory := db.NewWorkerFactory(dbConn)
 	workerVersion, err := workerVersion()
 	if err != nil {
@@ -721,6 +724,7 @@ func (cmd *RunCommand) constructBackendMembers(
 		dbWorkerBaseResourceTypeFactory,
 		dbWorkerTaskCacheFactory,
 		dbVolumeRepository,
+		dbArtifactLifecycle,
 		teamFactory,
 		dbWorkerFactory,
 		workerVersion,
@@ -762,7 +766,6 @@ func (cmd *RunCommand) constructBackendMembers(
 	dbWorkerLifecycle := db.NewWorkerLifecycle(dbConn)
 	dbResourceCacheLifecycle := db.NewResourceCacheLifecycle(dbConn)
 	dbContainerRepository := db.NewContainerRepository(dbConn)
-	dbArtifactLifecycle := db.NewArtifactLifecycle(dbConn)
 	resourceConfigCheckSessionLifecycle := db.NewResourceConfigCheckSessionLifecycle(dbConn)
 	dbBuildFactory := db.NewBuildFactory(dbConn, lockFactory, cmd.GC.OneOffBuildGracePeriod)
 	bus := dbConn.Bus()

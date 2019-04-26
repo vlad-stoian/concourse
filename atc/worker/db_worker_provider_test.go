@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"time"
 
 	"code.cloudfoundry.org/garden/client"
 	"code.cloudfoundry.org/garden/client/connection"
@@ -21,8 +22,6 @@ import (
 	"github.com/concourse/concourse/atc/worker/workerfakes"
 	"github.com/concourse/retryhttp/retryhttpfakes"
 	"github.com/cppforlife/go-semi-semantic/version"
-
-	"time"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -47,6 +46,7 @@ var _ = Describe("DBProvider", func() {
 		fakeImageFactory                    *workerfakes.FakeImageFactory
 		fakeImageFetchingDelegate           *workerfakes.FakeImageFetchingDelegate
 		fakeDBVolumeRepository              *dbfakes.FakeVolumeRepository
+		fakeArtifactProvider                *dbfakes.FakeArtifactProvider
 		fakeDBWorkerFactory                 *dbfakes.FakeWorkerFactory
 		fakeDBTeamFactory                   *dbfakes.FakeTeamFactory
 		fakeDBWorkerBaseResourceTypeFactory *dbfakes.FakeWorkerBaseResourceTypeFactory
@@ -142,6 +142,7 @@ var _ = Describe("DBProvider", func() {
 		fakeDBTeam.IDReturns(1)
 		fakeDBTeamFactory.GetByIDReturns(fakeDBTeam)
 		fakeDBVolumeRepository = new(dbfakes.FakeVolumeRepository)
+		fakeArtifactProvider = new(dbfakes.FakeArtifactProvider)
 
 		fakeBackOffFactory := new(retryhttpfakes.FakeBackOffFactory)
 		fakeBackOff := new(retryhttpfakes.FakeBackOff)
@@ -169,6 +170,7 @@ var _ = Describe("DBProvider", func() {
 			fakeDBWorkerBaseResourceTypeFactory,
 			fakeDBWorkerTaskCacheFactory,
 			fakeDBVolumeRepository,
+			fakeArtifactProvider,
 			fakeDBTeamFactory,
 			fakeDBWorkerFactory,
 			wantWorkerVersion,

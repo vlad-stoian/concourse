@@ -3,12 +3,13 @@ package worker
 import (
 	"context"
 	"fmt"
-	"github.com/concourse/baggageclaim"
-	"github.com/concourse/concourse/atc/metric"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/concourse/baggageclaim"
+	"github.com/concourse/concourse/atc/metric"
 
 	"code.cloudfoundry.org/garden"
 	"code.cloudfoundry.org/lager"

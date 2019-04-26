@@ -24,6 +24,7 @@ type dbWorkerProvider struct {
 	dbWorkerBaseResourceTypeFactory   db.WorkerBaseResourceTypeFactory
 	dbWorkerTaskCacheFactory          db.WorkerTaskCacheFactory
 	dbVolumeRepository                db.VolumeRepository
+	dbArtifactProvider                db.ArtifactProvider
 	dbTeamFactory                     db.TeamFactory
 	dbWorkerFactory                   db.WorkerFactory
 	workerVersion                     version.Version
@@ -39,6 +40,7 @@ func NewDBWorkerProvider(
 	dbWorkerBaseResourceTypeFactory db.WorkerBaseResourceTypeFactory,
 	dbWorkerTaskCacheFactory db.WorkerTaskCacheFactory,
 	dbVolumeRepository db.VolumeRepository,
+	dbArtifactProvider db.ArtifactProvider,
 	dbTeamFactory db.TeamFactory,
 	workerFactory db.WorkerFactory,
 	workerVersion version.Version,
@@ -53,6 +55,7 @@ func NewDBWorkerProvider(
 		dbWorkerBaseResourceTypeFactory:   dbWorkerBaseResourceTypeFactory,
 		dbWorkerTaskCacheFactory:          dbWorkerTaskCacheFactory,
 		dbVolumeRepository:                dbVolumeRepository,
+		dbArtifactProvider:                dbArtifactProvider,
 		dbTeamFactory:                     dbTeamFactory,
 		dbWorkerFactory:                   workerFactory,
 		workerVersion:                     workerVersion,
@@ -157,6 +160,35 @@ func (provider *dbWorkerProvider) FindWorkerForVolume(
 
 	if !found {
 		return nil, false, nil
+	}
+
+	worker := provider.NewGardenWorker(logger, clock.NewClock(), dbWorker, 0)
+	if !worker.IsVersionCompatible(logger, provider.workerVersion) {
+		return nil, false, nil
+	}
+	return worker, true, err
+}
+
+func (provider *dbWorkerProvider) FindWorkerForArtifact(
+	logger lager.Logger,
+	teamID int,
+	artifactID int,
+) (Worker, bool, error) {
+
+	logger = logger.Session("worker-for-artifact")
+	team := provider.dbTeamFactory.GetByID(teamID)
+
+	volume, found, err := team.FindVolumeForWorkerArtifact(artifactID)
+	if err != nil {
+		return nil, false, err
+	}
+	if !found {
+		return nil, false, nil
+	}
+
+	dbWorker, found, err := team.FindWorkerForVolume(volume.Handle())
+	if err != nil {
+		return nil, false, err
 	}
 
 	worker := provider.NewGardenWorker(logger, clock.NewClock(), dbWorker, 0)

@@ -1,7 +1,12 @@
 package worker
 
 import (
+	"io"
+
 	"code.cloudfoundry.org/lager"
+	"github.com/concourse/baggageclaim"
+	"github.com/concourse/concourse/atc"
+
 	"github.com/concourse/concourse/atc/db"
 )
 
@@ -10,8 +15,8 @@ import (
 type Client interface {
 	FindContainer(logger lager.Logger, teamID int, handle string) (Container, bool, error)
 	FindVolume(logger lager.Logger, teamID int, handle string) (Volume, bool, error)
-	CreateVolume(logger lager.Logger, spec VolumeSpec, teamID int, volumeType db.VolumeType) (Volume, error)
-	CreateArtifact(logger lager.Logger, name string) (db.WorkerArtifact, error)
+	CreateArtifact(logger lager.Logger, name string) (atc.WorkerArtifact, error)
+	Store(logger lager.Logger, teamID int, artifact atc.WorkerArtifact, volumePath string, data io.ReadCloser) error
 }
 
 func NewClient(pool Pool, workerProvider WorkerProvider, artifactProvider db.ArtifactProvider) *client {
@@ -62,25 +67,47 @@ func (client *client) FindVolume(logger lager.Logger, teamID int, handle string)
 	return worker.LookupVolume(logger, handle)
 }
 
-func (client *client) CreateVolume(logger lager.Logger, spec VolumeSpec, teamID int, volumeType db.VolumeType) (Volume, error) {
-	worker, err := client.pool.FindOrChooseWorker(logger, WorkerSpec{TeamID: teamID})
-	if err != nil {
-		return nil, err
-	}
-
-	artifact, err := client.CreateArtifact(logger, "dummy-should-not-exist")
-	if err != nil {
-		return nil, err
-	}
-
-	return worker.CreateVolume(logger, spec, teamID, artifact.ID(), volumeType)
-}
-
-func (client *client) CreateArtifact(logger lager.Logger, name string) (db.WorkerArtifact, error) {
+func (client *client) CreateArtifact(logger lager.Logger, name string) (atc.WorkerArtifact, error) {
 	artifact, err := client.artifactProvider.CreateArtifact(name)
 	if err != nil {
 		logger.Error("failed-to-create-artifact", err, lager.Data{"name": name})
-		return nil, err
+		return atc.WorkerArtifact{}, err
 	}
-	return artifact, nil
+	return atc.WorkerArtifact{
+		ID:        artifact.ID(),
+		Name:      artifact.Name(),
+		BuildID:   artifact.BuildID(),
+		CreatedAt: artifact.CreatedAt().Unix(),
+	}, nil
+}
+
+func (client *client) Store(logger lager.Logger, teamID int, artifact atc.WorkerArtifact, volumePath string, data io.ReadCloser) error {
+	var (
+		worker Worker
+		err    error
+		found  bool
+	)
+
+	worker, found, err = client.workerProvider.FindWorkerForArtifact(logger, teamID, artifact.ID)
+	if err != nil {
+		logger.Error("failed-to-find-worker-for-artifact", err, lager.Data{"artifactID": artifact.ID})
+		return err
+	}
+
+	if !found {
+		worker, err = client.pool.FindOrChooseWorker(logger, WorkerSpec{TeamID: teamID})
+		if err != nil {
+			return err
+		}
+	}
+
+	spec := VolumeSpec{
+		Strategy: baggageclaim.EmptyStrategy{},
+	}
+	volume, err := worker.CreateVolume(logger, spec, teamID, artifact.ID, db.VolumeTypeArtifact)
+	if err != nil {
+		return err
+	}
+
+	return volume.StreamIn(volumePath, data)
 }

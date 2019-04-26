@@ -5,12 +5,13 @@ import (
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/cloudfoundry/bosh-cli/director/template"
-	"github.com/concourse/concourse/atc"
-	"github.com/concourse/concourse/atc/creds"
-	"github.com/concourse/concourse/atc/db"
 	"github.com/lib/pq"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+
+	"github.com/concourse/concourse/atc"
+	"github.com/concourse/concourse/atc/creds"
+	"github.com/concourse/concourse/atc/db"
 )
 
 var _ = Describe("VolumeFactory", func() {
@@ -278,6 +279,7 @@ var _ = Describe("VolumeFactory", func() {
 			destroyed, err := destroyingContainer.Destroy()
 			Expect(err).NotTo(HaveOccurred())
 			Expect(destroyed).To(BeTrue())
+
 		})
 
 		It("returns orphaned volumes", func() {

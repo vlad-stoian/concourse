@@ -2,15 +2,15 @@ package worker_test
 
 import (
 	"errors"
+	"io"
+	"io/ioutil"
+	"strings"
 
 	"code.cloudfoundry.org/lager/lagertest"
-	"github.com/concourse/baggageclaim"
-
-	"github.com/concourse/concourse/atc/db"
+	"github.com/concourse/concourse/atc"
 	"github.com/concourse/concourse/atc/db/dbfakes"
 	"github.com/concourse/concourse/atc/worker"
 	"github.com/concourse/concourse/atc/worker/workerfakes"
-
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 )
@@ -151,62 +151,67 @@ var _ = Describe("Client", func() {
 		})
 	})
 
-	Describe("CreateVolume", func() {
-		var (
-			fakeWorker *workerfakes.FakeWorker
-			volumeSpec worker.VolumeSpec
-			volumeType db.VolumeType
-			err        error
-		)
-
-		BeforeEach(func() {
-			volumeSpec = worker.VolumeSpec{
-				Strategy: baggageclaim.EmptyStrategy{},
-			}
-
-			volumeType = db.VolumeTypeArtifact
-		})
-
-		JustBeforeEach(func() {
-			_, err = client.CreateVolume(logger, volumeSpec, 1, volumeType)
-		})
-
-		Context("when no workers can be found", func() {
-			BeforeEach(func() {
-				fakePool.FindOrChooseWorkerReturns(nil, errors.New("nope"))
-			})
-
-			It("returns an error", func() {
-				Expect(err).To(HaveOccurred())
-			})
-		})
-
-		Context("when the worker can be found", func() {
-			BeforeEach(func() {
-				fakeWorker = new(workerfakes.FakeWorker)
-				fakePool.FindOrChooseWorkerReturns(fakeWorker, nil)
-			})
-
-			It("creates the volume on the worker", func() {
-				Expect(err).ToNot(HaveOccurred())
-				Expect(fakeWorker.CreateVolumeCallCount()).To(Equal(1))
-				l, spec, id, _, t := fakeWorker.CreateVolumeArgsForCall(0)
-				Expect(l).To(Equal(logger))
-				Expect(spec).To(Equal(volumeSpec))
-				Expect(id).To(Equal(1))
-				Expect(t).To(Equal(volumeType))
-			})
-		})
-	})
-
 	Describe("CreateArtifact", func() {
 		It("creates an artifact", func() {
+			artifact := new(dbfakes.FakeWorkerArtifact)
+			fakeArtifactProvider.CreateArtifactReturns(artifact, nil)
 			_, err := client.CreateArtifact(logger, "some-artifact")
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(fakeArtifactProvider.CreateArtifactCallCount()).To(Equal(1))
 			nameArg := fakeArtifactProvider.CreateArtifactArgsForCall(0)
 			Expect(nameArg).To(Equal("some-artifact"))
+		})
+	})
+
+	Describe("Store", func() {
+		var (
+			artifact   atc.WorkerArtifact
+			readCloser io.ReadCloser
+			fakeWorker *workerfakes.FakeWorker
+			fakeVolume *workerfakes.FakeVolume
+		)
+
+		BeforeEach(func() {
+			artifact = atc.WorkerArtifact{
+				ID:   1,
+				Name: "some-name",
+			}
+			readCloser = ioutil.NopCloser(strings.NewReader(
+				`hi there`,
+			))
+			fakeWorker = new(workerfakes.FakeWorker)
+			fakeVolume = new(workerfakes.FakeVolume)
+			fakeWorker.CreateVolumeReturns(fakeVolume, nil)
+		})
+
+		Context("volume associated with artifact does not exist", func() {
+			BeforeEach(func() {
+				fakeWorkerProvider.FindWorkerForArtifactReturns(nil, false, nil)
+				fakePool.FindOrChooseWorkerReturns(fakeWorker, nil)
+			})
+
+			It("selects a worker and creates an associated volume on it", func() {
+				err := client.Store(logger, 123, artifact, "/", readCloser)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(fakePool.FindOrChooseWorkerCallCount()).To(Equal(1))
+				Expect(fakeWorker.CreateVolumeCallCount()).To(Equal(1))
+			})
+		})
+
+		It("puts data into the volume", func() {
+			fakeWorkerProvider.FindWorkerForArtifactReturns(fakeWorker, true, nil)
+
+			err := client.Store(logger, 123, artifact, "/", readCloser)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(fakeWorkerProvider.FindWorkerForArtifactCallCount()).To(Equal(1))
+
+			l, tID, aID := fakeWorkerProvider.FindWorkerForArtifactArgsForCall(0)
+			Expect(l).To(Equal(logger))
+			Expect(tID).To(Equal(123))
+			Expect(aID).To(Equal(artifact.ID))
+
+			Expect(fakeVolume.StreamInCallCount()).To(Equal(1))
 		})
 	})
 })

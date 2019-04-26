@@ -21,7 +21,11 @@ type WorkerProvider interface {
 		teamID int,
 		handle string,
 	) (Worker, bool, error)
-
+	FindWorkerForArtifact(
+		logger lager.Logger,
+		teamID int,
+		artifactID int,
+	) (Worker, bool, error)
 	FindWorkerForVolume(
 		logger lager.Logger,
 		teamID int,
