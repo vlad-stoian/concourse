@@ -18,8 +18,8 @@ type Pipeline struct {
 	Groups GroupConfigs `json:"groups,omitempty"`
 }
 
-func (self *migrations) Up_1522178770() error {
-	tx, err := self.DB.Begin()
+func (runner *encryptedGoMigrationRunner) Up_1522178770() error {
+	tx, err := runner.DB.Begin()
 	if err != nil {
 		return err
 	}

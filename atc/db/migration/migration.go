@@ -12,13 +12,17 @@ import (
 	"github.com/concourse/concourse/atc/db/encryption"
 	"github.com/concourse/concourse/atc/db/lock"
 	"github.com/concourse/concourse/atc/db/migration/migrations"
+	"github.com/concourse/voyager"
 	"github.com/gobuffalo/packr"
-	multierror "github.com/hashicorp/go-multierror"
+	"github.com/hashicorp/go-multierror"
 	_ "github.com/lib/pq"
 )
 
-func NewOpenHelper(driver, name string, lockFactory lock.LockFactory, strategy encryption.Strategy) *OpenHelper {
+var concourseMigrationDir = "migrations/"
+
+func NewOpenHelper(logger lager.Logger, driver, name string, lockFactory lock.LockFactory, strategy encryption.Strategy) *OpenHelper {
 	return &OpenHelper{
+		logger,
 		driver,
 		name,
 		lockFactory,
@@ -27,6 +31,7 @@ func NewOpenHelper(driver, name string, lockFactory lock.LockFactory, strategy e
 }
 
 type OpenHelper struct {
+	logger         lager.Logger
 	driver         string
 	dataSourceName string
 	lockFactory    lock.LockFactory
@@ -41,7 +46,10 @@ func (self *OpenHelper) CurrentVersion() (int, error) {
 
 	defer db.Close()
 
-	return NewMigrator(db, self.lockFactory, self.strategy).CurrentVersion()
+	source := packr.NewBox("migrations/")
+	goMigrationsRunner := migrations.NewEncryptedGoMigrationRunner(db, self.strategy)
+
+	return voyager.NewMigrator(self.logger, db, lock.NewDatabaseMigrationLockID()[0], self.strategy).CurrentVersion()
 }
 
 func (self *OpenHelper) SupportedVersion() (int, error) {
@@ -315,7 +323,7 @@ func (m *migrator) runMigration(migration migration) error {
 
 	switch migration.Strategy {
 	case GoMigration:
-		err = migrations.NewMigrations(m.db, m.strategy).Run(migration.Name)
+		err = migrations.NewEncryptedGoMigrationRunner(m.db, m.strategy).RunDatabaseMigration("")
 		if err != nil {
 			return m.recordMigrationFailure(migration, err, false)
 		}

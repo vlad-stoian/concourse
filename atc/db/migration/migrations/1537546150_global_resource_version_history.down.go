@@ -7,8 +7,8 @@ import (
 	"github.com/concourse/concourse/atc"
 )
 
-func (self *migrations) Down_1537546150() error {
-	tx, err := self.DB.Begin()
+func (runner *encryptedGoMigrationRunner) Down_1537546150() error {
+	tx, err := runner.DB.Begin()
 	if err != nil {
 		return err
 	}
@@ -40,7 +40,7 @@ func (self *migrations) Down_1537546150() error {
 			noncense = &nonce.String
 		}
 
-		decryptedConfig, err := self.Decrypt(string(configBlob), noncense)
+		decryptedConfig, err := runner.Decrypt(string(configBlob), noncense)
 		if err != nil {
 			return err
 		}

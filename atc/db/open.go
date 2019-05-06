@@ -62,7 +62,7 @@ func Open(logger lager.Logger, sqlDriver string, sqlDataSource string, newKey *e
 			strategy = encryption.NewNoEncryption()
 		}
 
-		sqlDb, err := migration.NewOpenHelper(sqlDriver, sqlDataSource, lockFactory, strategy).Open()
+		sqlDb, err := migration.NewOpenHelper(logger, sqlDriver, sqlDataSource, lockFactory, strategy).Open()
 		if err != nil {
 			if shouldRetry(err) {
 				logger.Error("failed-to-open-db-retrying", err)

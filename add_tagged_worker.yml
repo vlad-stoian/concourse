@@ -1,0 +1,43 @@
+name: concourse-prod-test-worker
+
+releases:
+- name: concourse
+  version: latest
+- name: telegraf-agent
+  version: latest
+
+stemcells:
+- alias: xenial
+  os: ubuntu-xenial
+  version: latest
+
+instance_groups:
+- name: worker-test
+  instances: 1
+  azs: [z1]
+  vm_type: worker
+  stemcell: xenial
+  networks: [{name: private}]
+  jobs:
+  - name: worker
+    release: concourse
+    properties:
+      tags: ["runtime-test"]
+      worker_gateway:
+        hosts: ["ci.concourse-ci.org:2222"]
+        host_public_key: ((tsa_host_key.public_key))
+        worker_key: ((worker_key))
+        registration_mode: forward
+      garden:
+        address: 127.0.0.1:7777
+        forward_address: 127.0.0.1:7777
+      baggageclaim:
+        log_level: debug
+        driver: btrfs
+
+update:
+  canaries: 1
+  max_in_flight: 1
+  serial: false
+  canary_watch_time: 1000-60000
+  update_watch_time: 1000-60000
