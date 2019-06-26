@@ -226,6 +226,11 @@ func (step *TaskStep) Run(ctx context.Context, state RunState) error {
 
 		step.succeeded = (status == 0)
 
+		err = step.registerInputs(logger, repository, config, container, step.containerMetadata, chosenWorker, state)
+		if err != nil {
+			return err
+		}
+
 		err = step.registerOutputs(logger, repository, config, container, step.containerMetadata)
 		if err != nil {
 			return err
@@ -446,6 +451,45 @@ func (step *TaskStep) workerSpec(logger lager.Logger, resourceTypes atc.Versione
 	}
 
 	return workerSpec, nil
+}
+
+func (step *TaskStep) registerInputs(
+	logger lager.Logger,
+	repository *artifact.Repository,
+	config atc.TaskConfig,
+	container worker.Container,
+	metadata db.ContainerMetadata,
+	worker worker.Worker,
+	state RunState,
+) error {
+	volumeMounts := container.VolumeMounts()
+
+	logger.Debug("registering-outputs", lager.Data{"outputs": config.Outputs})
+
+	for _, inputArtifact := range config.Inputs {
+		inputName := inputArtifact.Name
+		if sourceName, ok := step.plan.InputMapping[inputArtifact.Name]; ok {
+			inputName = sourceName
+		}
+		inputPath := inputArtifact.Path
+
+		for _, mount := range volumeMounts {
+			if filepath.Clean(inputPath) == filepath.Clean(mount.MountPath) {
+				source, found := state.Artifacts().SourceFor(artifact.Name(inputName))
+				if !found {
+					continue
+				}
+				if artifactSource, ok := source.(*getArtifactSource); ok {
+					resourceCache := artifactSource.resourceInstance.ResourceCache()
+					err := mount.Volume.InitializeResourceCache(resourceCache)
+					if err != nil {
+						return err
+					}
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func (step *TaskStep) registerOutputs(logger lager.Logger, repository *artifact.Repository, config atc.TaskConfig, container worker.Container, metadata db.ContainerMetadata) error {
