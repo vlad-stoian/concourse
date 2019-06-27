@@ -102,6 +102,10 @@ func (instance resourceInstance) LockName(workerName string) (string, error) {
 	return fmt.Sprintf("%x", sha256.Sum256(taskNameJSON)), nil
 }
 
+func (instance resourceInstance) FindVolumeForResourceCache() (db.CreatedVolume, error){
+	return instance.resourceCache.FindVolume()
+}
+
 func (instance resourceInstance) FindOn(logger lager.Logger, w worker.Worker) (worker.Volume, bool, error) {
 	return w.FindVolumeForResourceCache(
 		logger,

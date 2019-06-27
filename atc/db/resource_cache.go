@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	sq "github.com/Masterminds/squirrel"
+
 	"github.com/concourse/concourse/atc"
 	"github.com/concourse/concourse/atc/db/lock"
 )
@@ -192,6 +193,7 @@ type UsedResourceCache interface {
 
 	Destroy(Tx) (bool, error)
 	BaseResourceType() *UsedBaseResourceType
+	FindVolume() (CreatedVolume, error)
 }
 
 type usedResourceCache struct {
@@ -228,6 +230,26 @@ func (cache *usedResourceCache) Destroy(tx Tx) (bool, error) {
 	}
 
 	return true, nil
+}
+
+func (cache *usedResourceCache) FindVolume() (CreatedVolume, error) {
+	query, args, err := psql.Select(volumeColumns...).
+		From("volumes v").
+		Join("worker_resource_caches wrc ON volume.worker_resource_cache_id").
+		Where(sq.Eq{
+			"wrc.resource_cache_id": cache.id,
+	}).ToSql()
+	if err != nil {
+		return nil, err
+	}
+
+	scanner := cache.conn.QueryRow(query, args)
+	_, createdVolume, _, _, err := scanVolume(scanner, cache.conn)
+	if err != nil {
+		return nil, err
+	}
+
+	return createdVolume, nil
 }
 
 func (cache *usedResourceCache) BaseResourceType() *UsedBaseResourceType {
