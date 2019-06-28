@@ -226,7 +226,7 @@ func (step *TaskStep) Run(ctx context.Context, state RunState) error {
 
 		step.succeeded = (status == 0)
 
-		err = step.registerOutputs(logger, repository, config, container, step.containerMetadata)
+		err = step.registerOutputs(logger, repository, config, container, step.containerMetadata, chosenWorker)
 		if err != nil {
 			return err
 		}
@@ -282,7 +282,7 @@ func (step *TaskStep) Run(ctx context.Context, state RunState) error {
 
 	select {
 	case <-ctx.Done():
-		err = step.registerOutputs(logger, repository, config, container, step.containerMetadata)
+		err = step.registerOutputs(logger, repository, config, container, step.containerMetadata, chosenWorker)
 		if err != nil {
 			return err
 		}
@@ -301,7 +301,7 @@ func (step *TaskStep) Run(ctx context.Context, state RunState) error {
 			return processErr
 		}
 
-		err = step.registerOutputs(logger, repository, config, container, step.containerMetadata)
+		err = step.registerOutputs(logger, repository, config, container, step.containerMetadata, chosenWorker)
 		if err != nil {
 			return err
 		}
@@ -448,7 +448,7 @@ func (step *TaskStep) workerSpec(logger lager.Logger, resourceTypes atc.Versione
 	return workerSpec, nil
 }
 
-func (step *TaskStep) registerOutputs(logger lager.Logger, repository *artifact.Repository, config atc.TaskConfig, container worker.Container, metadata db.ContainerMetadata) error {
+func (step *TaskStep) registerOutputs(logger lager.Logger, repository *artifact.Repository, config atc.TaskConfig, container worker.Container, metadata db.ContainerMetadata, worker worker.Worker) error {
 	volumeMounts := container.VolumeMounts()
 
 	logger.Debug("registering-outputs", lager.Data{"outputs": config.Outputs})
@@ -478,12 +478,14 @@ func (step *TaskStep) registerOutputs(logger lager.Logger, repository *artifact.
 				if volumeMount.MountPath == filepath.Join(metadata.WorkingDirectory, cacheConfig.Path) {
 					logger.Debug("initializing-cache", lager.Data{"path": volumeMount.MountPath})
 
-					err := volumeMount.Volume.InitializeTaskCache(
+					err := worker.InitializeTaskCache(
 						logger,
 						step.metadata.JobID,
 						step.plan.Name,
 						cacheConfig.Path,
-						bool(step.plan.Privileged))
+						bool(step.plan.Privileged),
+						volumeMount.Volume,
+					)
 					if err != nil {
 						return err
 					}

@@ -178,17 +178,17 @@ func (step *GetStep) Run(ctx context.Context, state RunState) error {
 		db.NewBuildStepContainerOwner(step.metadata.BuildID, step.planID, step.metadata.TeamID),
 	)
 
-	chosenWorker, err := step.workerPool.FindOrChooseWorkerForContainer(
-		ctx,
-		logger,
-		resourceInstance.ContainerOwner(),
-		containerSpec,
-		workerSpec,
-		step.strategy,
-	)
-	if err != nil {
-		return err
-	}
+	//chosenWorker, err := step.workerPool.FindOrChooseWorkerForContainer(
+	//	ctx,
+	//	logger,
+	//	resourceInstance.ContainerOwner(),
+	//	containerSpec,
+	//	workerSpec,
+	//	step.strategy,
+	//)
+	//if err != nil {
+	//	return err
+	//}
 
 	step.delegate.Starting(logger)
 
@@ -198,7 +198,8 @@ func (step *GetStep) Run(ctx context.Context, state RunState) error {
 		resource.Session{
 			Metadata: step.containerMetadata,
 		},
-		chosenWorker,
+		workerSpec,
+		step.workerPool,
 		containerSpec,
 		resourceTypes,
 		resourceInstance,

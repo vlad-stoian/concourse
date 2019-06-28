@@ -26,6 +26,8 @@ var ResourceConfigCheckSessionExpiredError = errors.New("no db container was fou
 //go:generate counterfeiter . Worker
 
 type Worker interface {
+	ClientTwo
+
 	BuildContainers() int
 
 	Description() string
@@ -56,7 +58,6 @@ type Worker interface {
 		atc.VersionedResourceTypes,
 	) (Container, error)
 
-	FindVolumeForResourceCache(logger lager.Logger, resourceCache db.UsedResourceCache) (Volume, bool, error)
 	FindVolumeForTaskCache(lager.Logger, int, int, string, string) (Volume, bool, error)
 
 	CertsVolume(lager.Logger) (volume Volume, found bool, err error)
@@ -64,6 +65,14 @@ type Worker interface {
 	CreateVolume(logger lager.Logger, spec VolumeSpec, teamID int, volumeType db.VolumeType) (Volume, error)
 
 	GardenClient() garden.Client
+	InitializeTaskCache(
+		logger lager.Logger,
+		jobID int,
+		stepName string,
+		path string,
+		privileged bool,
+		volume Volume,
+	) error
 }
 
 type gardenWorker struct {
@@ -106,6 +115,17 @@ func NewGardenWorker(
 		buildContainers: numBuildContainers,
 		helper:          workerHelper,
 	}
+}
+
+func (worker *gardenWorker) FindOrChooseWorkerForContainer(
+	ctx context.Context,
+	logger lager.Logger,
+	owner db.ContainerOwner,
+	containerSpec ContainerSpec,
+	workerSpec WorkerSpec,
+	strategy ContainerPlacementStrategy,
+) (Worker, error) {
+	return worker, nil
 }
 
 func (worker *gardenWorker) GardenClient() garden.Client {
@@ -154,7 +174,7 @@ func (worker *gardenWorker) FindResourceTypeByPath(path string) (atc.WorkerResou
 	return atc.WorkerResourceType{}, false
 }
 
-func (worker *gardenWorker) FindVolumeForResourceCache(logger lager.Logger, resourceCache db.UsedResourceCache) (Volume, bool, error) {
+func (worker *gardenWorker) FindVolumeForResourceCache(logger lager.Logger, spec WorkerSpec, resourceCache db.UsedResourceCache) (Volume, bool, error) {
 	return worker.volumeClient.FindVolumeForResourceCache(logger, resourceCache)
 }
 
@@ -352,6 +372,40 @@ func (worker *gardenWorker) EnsureDBContainerExists(
 	logger.Debug("created-creating-container-in-db")
 
 	return nil
+}
+
+func (worker *gardenWorker) InitializeTaskCache(
+	logger lager.Logger,
+	jobID int,
+	stepName string,
+	path string,
+	privileged bool,
+	volume Volume,
+) error {
+	if volume.DBVolume().ParentHandle() == "" {
+		return volume.DBVolume().InitializeTaskCache(jobID, stepName, path)
+	}
+
+	logger.Debug("creating-an-import-volume", lager.Data{"path": volume.BCVolume().Path()})
+
+	// always create, if there are any existing task cache volumes they will be gced
+	// after initialization of the current one
+	importVolume, err := worker.volumeClient.CreateVolumeForTaskCache(
+		logger,
+		VolumeSpec{
+			Strategy:   baggageclaim.ImportStrategy{Path: volume.BCVolume().Path()},
+			Privileged: privileged,
+		},
+		volume.DBVolume().TeamID(),
+		jobID,
+		stepName,
+		path,
+	)
+	if err != nil {
+		return err
+	}
+
+	return worker.InitializeTaskCache(logger, jobID, stepName, path, privileged, importVolume)
 }
 
 func (worker *gardenWorker) fetchImageForContainer(

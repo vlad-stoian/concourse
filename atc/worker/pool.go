@@ -58,6 +58,16 @@ func (err NoCompatibleWorkersError) Error() string {
 //go:generate counterfeiter . Pool
 
 type Pool interface {
+	ClientTwo
+
+	FindOrChooseWorker(
+		lager.Logger,
+		WorkerSpec,
+	) (Worker, error)
+
+}
+
+type ClientTwo interface {
 	FindOrChooseWorkerForContainer(
 		context.Context,
 		lager.Logger,
@@ -66,11 +76,7 @@ type Pool interface {
 		WorkerSpec,
 		ContainerPlacementStrategy,
 	) (Worker, error)
-
-	FindOrChooseWorker(
-		lager.Logger,
-		WorkerSpec,
-	) (Worker, error)
+	FindVolumeForResourceCache(spec WorkerSpec, resourceCache db.UsedResourceCache) (Volume, bool, error)
 }
 
 type pool struct {
@@ -163,6 +169,23 @@ dance:
 		}
 
 	return worker, nil
+}
+
+func (pool *pool) FindVolumeForResourceCache(logger lager.Logger, spec WorkerSpec, resourceCache db.UsedResourceCache) (Volume, bool, error) {
+	workers, err := pool.allSatisfying(nil, spec)
+	if err != nil {
+		return nil, false, err
+	}
+	for _, worker := range workers {
+		volume, found, err := worker.FindVolumeForResourceCache(logger, spec, resourceCache)
+		if err != nil {
+			return nil, false, err
+		}
+		if found {
+			return volume, found, nil
+		}
+	}
+	return nil, false, nil
 }
 
 func (pool *pool) FindOrChooseWorker(

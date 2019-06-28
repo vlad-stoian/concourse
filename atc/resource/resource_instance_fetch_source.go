@@ -22,7 +22,8 @@ type FetchSource interface {
 type FetchSourceFactory interface {
 	NewFetchSource(
 		logger lager.Logger,
-		worker worker.Worker,
+		spec worker.WorkerSpec,
+		pool worker.Pool,
 		resourceInstance ResourceInstance,
 		resourceTypes atc.VersionedResourceTypes,
 		containerSpec worker.ContainerSpec,
@@ -48,7 +49,8 @@ func NewFetchSourceFactory(
 
 func (r *fetchSourceFactory) NewFetchSource(
 	logger lager.Logger,
-	worker worker.Worker,
+	spec worker.WorkerSpec,
+	pool worker.Pool,
 	resourceInstance ResourceInstance,
 	resourceTypes atc.VersionedResourceTypes,
 	containerSpec worker.ContainerSpec,
@@ -57,7 +59,8 @@ func (r *fetchSourceFactory) NewFetchSource(
 ) FetchSource {
 	return &resourceInstanceFetchSource{
 		logger:                 logger,
-		worker:                 worker,
+		spec:                   spec,
+		pool:                   pool,
 		resourceInstance:       resourceInstance,
 		resourceTypes:          resourceTypes,
 		containerSpec:          containerSpec,
@@ -70,7 +73,8 @@ func (r *fetchSourceFactory) NewFetchSource(
 
 type resourceInstanceFetchSource struct {
 	logger                 lager.Logger
-	worker                 worker.Worker
+	spec                 worker.WorkerSpec
+	pool worker.Pool
 	resourceInstance       ResourceInstance
 	resourceTypes          atc.VersionedResourceTypes
 	containerSpec          worker.ContainerSpec
@@ -81,13 +85,13 @@ type resourceInstanceFetchSource struct {
 }
 
 func (s *resourceInstanceFetchSource) LockName() (string, error) {
-	return s.resourceInstance.LockName(s.worker.Name())
+	return s.resourceInstance.LockName("worker") //TODO: fix
 }
 
 func (s *resourceInstanceFetchSource) Find() (VersionedSource, bool, error) {
 	sLog := s.logger.Session("find")
 
-	volume, found, err := s.resourceInstance.FindOn(s.logger, s.worker)
+	volume, found, err := s.pool.FindWorkerRCVolume(s.spec, s.resourceInstance.ResourceCache())
 	if err != nil {
 		sLog.Error("failed-to-find-initialized-on", err)
 		return nil, false, err
@@ -131,7 +135,12 @@ func (s *resourceInstanceFetchSource) Create(ctx context.Context) (VersionedSour
 	}
 
 
-	container, err := s.worker.FindOrCreateContainer(
+	chosenWorker, err := s.pool.FindOrChooseWorkerForContainer(ctx, s.logger, s.resourceInstance.ContainerOwner(), s.containerSpec, s.spec, worker.NewRandomPlacementStrategy())
+	if err != nil {
+		return nil, err
+	}
+
+	container, err := chosenWorker.FindOrCreateContainer(
 		ctx,
 		s.logger,
 		s.imageFetchingDelegate,

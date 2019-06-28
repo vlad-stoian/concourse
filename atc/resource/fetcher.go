@@ -25,7 +25,8 @@ type Fetcher interface {
 		ctx context.Context,
 		logger lager.Logger,
 		session Session,
-		gardenWorker worker.Worker,
+		spec worker.WorkerSpec,
+		pool worker.ClientTwo,
 		containerSpec worker.ContainerSpec,
 		resourceTypes atc.VersionedResourceTypes,
 		resourceInstance ResourceInstance,
@@ -55,7 +56,8 @@ func (f *fetcher) Fetch(
 	ctx context.Context,
 	logger lager.Logger,
 	session Session,
-	gardenWorker worker.Worker,
+	spec worker.WorkerSpec,
+	pool worker.ClientTwo,
 	containerSpec worker.ContainerSpec,
 	resourceTypes atc.VersionedResourceTypes,
 	resourceInstance ResourceInstance,
@@ -65,7 +67,7 @@ func (f *fetcher) Fetch(
 		"resource": ResourcesDir("get"),
 	}
 
-	source := f.fetchSourceFactory.NewFetchSource(logger, gardenWorker, resourceInstance, resourceTypes, containerSpec, session, imageFetchingDelegate)
+	source := f.fetchSourceFactory.NewFetchSource(logger, spec, pool, resourceInstance, resourceTypes, containerSpec, session, imageFetchingDelegate)
 
 	ticker := f.clock.NewTicker(GetResourceLockInterval)
 	defer ticker.Stop()
