@@ -209,6 +209,7 @@ func (step *TaskStep) Run(ctx context.Context, state RunState) error {
 		owner,
 		step.containerMetadata,
 		containerSpec,
+		workerSpec,
 		resourceTypes,
 	)
 	if err != nil {

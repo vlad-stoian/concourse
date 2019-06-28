@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/concourse/concourse/atc"
 	"math/rand"
 	"time"
 
@@ -76,7 +77,17 @@ type ClientTwo interface {
 		WorkerSpec,
 		ContainerPlacementStrategy,
 	) (Worker, error)
-	FindVolumeForResourceCache(spec WorkerSpec, resourceCache db.UsedResourceCache) (Volume, bool, error)
+	FindVolumeForResourceCache(logger lager.Logger, spec WorkerSpec, resourceCache db.UsedResourceCache) (Volume, bool, error)
+	FindOrCreateContainer(
+		context.Context,
+		lager.Logger,
+		ImageFetchingDelegate,
+		db.ContainerOwner,
+		db.ContainerMetadata,
+		ContainerSpec,
+		WorkerSpec,
+		atc.VersionedResourceTypes,
+	) (Container, error)
 }
 
 type pool struct {
@@ -172,7 +183,7 @@ dance:
 }
 
 func (pool *pool) FindVolumeForResourceCache(logger lager.Logger, spec WorkerSpec, resourceCache db.UsedResourceCache) (Volume, bool, error) {
-	workers, err := pool.allSatisfying(nil, spec)
+	workers, err := pool.allSatisfying(logger, spec)
 	if err != nil {
 		return nil, false, err
 	}
@@ -198,4 +209,38 @@ func (pool *pool) FindOrChooseWorker(
 	}
 
 	return workers[rand.Intn(len(workers))], nil
+}
+func (pool *pool) FindOrCreateContainer(
+	ctx context.Context,
+	logger lager.Logger,
+	delegate ImageFetchingDelegate,
+	owner db.ContainerOwner,
+	metadata db.ContainerMetadata,
+	containerSpec ContainerSpec,
+	workerSpec WorkerSpec,
+	resourceTypes atc.VersionedResourceTypes,
+) (Container, error) {
+	worker, err := pool.FindOrChooseWorkerForContainer(
+	ctx,
+		logger,
+		owner,
+		containerSpec,
+		workerSpec,
+		NewRandomPlacementStrategy(),
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return worker.FindOrCreateContainer(
+		ctx,
+		logger,
+		delegate,
+		owner,
+		metadata,
+		containerSpec,
+		workerSpec,
+		resourceTypes,
+	)
 }

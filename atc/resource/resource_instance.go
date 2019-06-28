@@ -105,6 +105,7 @@ func (instance resourceInstance) LockName(workerName string) (string, error) {
 func (instance resourceInstance) FindOn(logger lager.Logger, w worker.Worker) (worker.Volume, bool, error) {
 	return w.FindVolumeForResourceCache(
 		logger,
+		worker.WorkerSpec{},
 		instance.resourceCache,
 	)
 }

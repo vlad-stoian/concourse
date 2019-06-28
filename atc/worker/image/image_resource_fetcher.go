@@ -27,7 +27,7 @@ var ErrImageGetDidNotProduceVolume = errors.New("fetching the image did not prod
 
 type ImageResourceFetcherFactory interface {
 	NewImageResourceFetcher(
-		worker.Worker,
+		worker.ClientTwo,
 		worker.ImageResource,
 		atc.Version,
 		int,
@@ -69,7 +69,7 @@ func NewImageResourceFetcherFactory(
 }
 
 func (f *imageResourceFetcherFactory) NewImageResourceFetcher(
-	worker worker.Worker,
+	worker worker.ClientTwo,
 	imageResource worker.ImageResource,
 	version atc.Version,
 	teamID int,
@@ -92,7 +92,7 @@ func (f *imageResourceFetcherFactory) NewImageResourceFetcher(
 }
 
 type imageResourceFetcher struct {
-	worker                  worker.Worker
+	worker                  worker.ClientTwo
 	resourceFactory         resource.ResourceFactory
 	resourceFetcher         resource.Fetcher
 	dbResourceCacheFactory  db.ResourceCacheFactory
@@ -173,6 +173,7 @@ func (i *imageResourceFetcher) Fetch(
 		ctx,
 		logger.Session("init-image"),
 		getSess,
+		worker.WorkerSpec{},
 		i.worker,
 		containerSpec,
 		i.customTypes,
@@ -237,6 +238,7 @@ func (i *imageResourceFetcher) ensureVersionOfType(
 			Type: db.ContainerTypeCheck,
 		},
 		containerSpec,
+		worker.WorkerSpec{},
 		i.customTypes,
 	)
 	if err != nil {
@@ -295,6 +297,7 @@ func (i *imageResourceFetcher) getLatestVersion(
 			Type: db.ContainerTypeCheck,
 		},
 		resourceSpec,
+		worker.WorkerSpec{},
 		i.customTypes,
 	)
 	if err != nil {

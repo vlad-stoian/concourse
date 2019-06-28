@@ -23,7 +23,7 @@ type FetchSourceFactory interface {
 	NewFetchSource(
 		logger lager.Logger,
 		spec worker.WorkerSpec,
-		pool worker.Pool,
+		pool worker.ClientTwo,
 		resourceInstance ResourceInstance,
 		resourceTypes atc.VersionedResourceTypes,
 		containerSpec worker.ContainerSpec,
@@ -50,7 +50,7 @@ func NewFetchSourceFactory(
 func (r *fetchSourceFactory) NewFetchSource(
 	logger lager.Logger,
 	spec worker.WorkerSpec,
-	pool worker.Pool,
+	pool worker.ClientTwo,
 	resourceInstance ResourceInstance,
 	resourceTypes atc.VersionedResourceTypes,
 	containerSpec worker.ContainerSpec,
@@ -74,7 +74,7 @@ func (r *fetchSourceFactory) NewFetchSource(
 type resourceInstanceFetchSource struct {
 	logger                 lager.Logger
 	spec                 worker.WorkerSpec
-	pool worker.Pool
+	pool worker.ClientTwo
 	resourceInstance       ResourceInstance
 	resourceTypes          atc.VersionedResourceTypes
 	containerSpec          worker.ContainerSpec
@@ -91,7 +91,7 @@ func (s *resourceInstanceFetchSource) LockName() (string, error) {
 func (s *resourceInstanceFetchSource) Find() (VersionedSource, bool, error) {
 	sLog := s.logger.Session("find")
 
-	volume, found, err := s.pool.FindWorkerRCVolume(s.spec, s.resourceInstance.ResourceCache())
+	volume, found, err := s.pool.FindVolumeForResourceCache(s.logger, s.spec, s.resourceInstance.ResourceCache())
 	if err != nil {
 		sLog.Error("failed-to-find-initialized-on", err)
 		return nil, false, err
@@ -147,6 +147,7 @@ func (s *resourceInstanceFetchSource) Create(ctx context.Context) (VersionedSour
 		s.resourceInstance.ContainerOwner(),
 		s.session.Metadata,
 		s.containerSpec,
+		s.spec,
 		s.resourceTypes,
 	)
 	if err != nil {

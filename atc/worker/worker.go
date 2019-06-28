@@ -48,15 +48,6 @@ type Worker interface {
 	) error
 
 	FindContainerByHandle(lager.Logger, int, string) (Container, bool, error)
-	FindOrCreateContainer(
-		context.Context,
-		lager.Logger,
-		ImageFetchingDelegate,
-		db.ContainerOwner,
-		db.ContainerMetadata,
-		ContainerSpec,
-		atc.VersionedResourceTypes,
-	) (Container, error)
 
 	FindVolumeForTaskCache(lager.Logger, int, int, string, string) (Volume, bool, error)
 
@@ -201,6 +192,7 @@ func (worker *gardenWorker) FindOrCreateContainer(
 	owner db.ContainerOwner,
 	metadata db.ContainerMetadata,
 	containerSpec ContainerSpec,
+	workerSpec WorkerSpec,
 	resourceTypes atc.VersionedResourceTypes,
 ) (Container, error) {
 

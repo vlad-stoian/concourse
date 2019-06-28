@@ -346,6 +346,7 @@ func (scanner *resourceScanner) check(
 			Type: db.ContainerTypeCheck,
 		},
 		containerSpec,
+		workerSpec,
 		resourceTypes,
 	)
 	if err != nil {

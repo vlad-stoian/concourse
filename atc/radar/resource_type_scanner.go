@@ -282,6 +282,7 @@ func (scanner *resourceTypeScanner) check(
 			Type: db.ContainerTypeCheck,
 		},
 		containerSpec,
+		workerSpec,
 		versionedResourceTypes.Without(savedResourceType.Name()),
 	)
 	if err != nil {
