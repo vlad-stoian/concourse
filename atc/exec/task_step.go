@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/vito/houdini/process"
 	"io"
 	"path"
 	"path/filepath"
@@ -21,8 +22,6 @@ import (
 	"github.com/concourse/concourse/atc/worker"
 )
 
-const taskProcessID = "task"
-const taskExitStatusPropertyName = "concourse:exit-status"
 
 // MissingInputsError is returned when any of the task's required inputs are
 // missing.
@@ -190,131 +189,40 @@ func (step *TaskStep) Run(ctx context.Context, state RunState) error {
 
 	owner := db.NewBuildStepContainerOwner(step.metadata.BuildID, step.planID, step.metadata.TeamID)
 
-	chosenWorker, err := step.workerPool.FindOrChooseWorkerForContainer(
+	status, volumeMounts, err := step.workerPool.RunTaskStep(
 		ctx,
 		logger,
 		owner,
 		containerSpec,
 		workerSpec,
 		step.strategy,
-	)
-	if err != nil {
-		return err
-	}
-
-	container, err := chosenWorker.FindOrCreateContainer(
-		ctx,
-		logger,
 		step.delegate,
-		owner,
 		step.containerMetadata,
-		containerSpec,
-		workerSpec,
 		resourceTypes,
+		config,
 	)
+
 	if err != nil {
 		return err
 	}
 
-	exitStatusProp, err := container.Property(taskExitStatusPropertyName)
-	if err == nil {
-		logger.Info("already-exited", lager.Data{"status": exitStatusProp})
-
-		status, err := strconv.Atoi(exitStatusProp)
-		if err != nil {
-			return err
-		}
-
-		step.succeeded = (status == 0)
-
-		err = step.registerOutputs(logger, repository, config, container, step.containerMetadata, chosenWorker)
-		if err != nil {
-			return err
-		}
-
-		return nil
-	}
-
-	processIO := garden.ProcessIO{
-		Stdout: step.delegate.Stdout(),
-		Stderr: step.delegate.Stderr(),
-	}
-
-	process, err := container.Attach(taskProcessID, processIO)
-	if err == nil {
-		logger.Info("already-running")
-	} else {
-		logger.Info("spawning")
-
-		step.delegate.Starting(logger, config)
-
-		process, err = container.Run(
-			garden.ProcessSpec{
-				ID: taskProcessID,
-
-				Path: config.Run.Path,
-				Args: config.Run.Args,
-
-				Dir: path.Join(step.containerMetadata.WorkingDirectory, config.Run.Dir),
-
-				// Guardian sets the default TTY window size to width: 80, height: 24,
-				// which creates ANSI control sequences that do not work with other window sizes
-				TTY: &garden.TTYSpec{
-					WindowSize: &garden.WindowSize{Columns: 500, Rows: 500},
-				},
-			},
-			processIO,
-		)
-	}
-	if err != nil {
-		return err
-	}
-
-	logger.Info("attached")
-
-	exited := make(chan struct{})
-	var processStatus int
-	var processErr error
-
-	go func() {
-		processStatus, processErr = process.Wait()
-		close(exited)
-	}()
 
 	select {
 	case <-ctx.Done():
-		err = step.registerOutputs(logger, repository, config, container, step.containerMetadata, chosenWorker)
+		err = step.registerOutputs(logger, repository, config, container, step.containerMetadata)
 		if err != nil {
 			return err
 		}
-
-		err = container.Stop(false)
-		if err != nil {
-			logger.Error("stopping-container", err)
-		}
-
-		<-exited
 
 		return ctx.Err()
 
-	case <-exited:
-		if processErr != nil {
-			return processErr
-		}
+	default:
+		step.succeeded = (status == 0)
 
-		err = step.registerOutputs(logger, repository, config, container, step.containerMetadata, chosenWorker)
+		err = step.registerOutputs(logger, repository, config, container, step.containerMetadata)
 		if err != nil {
 			return err
 		}
-
-		step.delegate.Finished(logger, ExitStatus(processStatus))
-
-		err = container.SetProperty(taskExitStatusPropertyName, fmt.Sprintf("%d", processStatus))
-		if err != nil {
-			return err
-		}
-
-		step.succeeded = processStatus == 0
 
 		return nil
 	}
@@ -449,7 +357,7 @@ func (step *TaskStep) workerSpec(logger lager.Logger, resourceTypes atc.Versione
 	return workerSpec, nil
 }
 
-func (step *TaskStep) registerOutputs(logger lager.Logger, repository *artifact.Repository, config atc.TaskConfig, container worker.Container, metadata db.ContainerMetadata, worker worker.Worker) error {
+func (step *TaskStep) registerOutputs(logger lager.Logger, repository *artifact.Repository, config atc.TaskConfig, container worker.Container, metadata db.ContainerMetadata) error {
 	volumeMounts := container.VolumeMounts()
 
 	logger.Debug("registering-outputs", lager.Data{"outputs": config.Outputs})
@@ -479,14 +387,12 @@ func (step *TaskStep) registerOutputs(logger lager.Logger, repository *artifact.
 				if volumeMount.MountPath == filepath.Join(metadata.WorkingDirectory, cacheConfig.Path) {
 					logger.Debug("initializing-cache", lager.Data{"path": volumeMount.MountPath})
 
-					err := worker.InitializeTaskCache(
+					err := volumeMount.Volume.InitializeTaskCache(
 						logger,
 						step.metadata.JobID,
 						step.plan.Name,
 						cacheConfig.Path,
-						bool(step.plan.Privileged),
-						volumeMount.Volume,
-					)
+						bool(step.plan.Privileged))
 					if err != nil {
 						return err
 					}

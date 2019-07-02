@@ -244,7 +244,7 @@ func (c *volumeClient) FindVolumeForResourceCache(
 		return nil, false, nil
 	}
 
-	return NewVolume(bcVolume, dbVolume), true, nil
+	return NewVolume(bcVolume, dbVolume, c), true, nil
 }
 
 func (c *volumeClient) CreateVolumeForTaskCache(
@@ -356,7 +356,7 @@ func (c *volumeClient) FindVolumeForTaskCache(
 		return nil, false, nil
 	}
 
-	return NewVolume(bcVolume, dbVolume), true, nil
+	return NewVolume(bcVolume, dbVolume, c), true, nil
 }
 
 func (c *volumeClient) LookupVolume(logger lager.Logger, handle string) (Volume, bool, error) {
@@ -380,7 +380,7 @@ func (c *volumeClient) LookupVolume(logger lager.Logger, handle string) (Volume,
 		return nil, false, nil
 	}
 
-	return NewVolume(bcVolume, dbVolume), true, nil
+	return NewVolume(bcVolume, dbVolume, c), true, nil
 }
 
 func (c *volumeClient) findOrCreateVolume(
@@ -414,7 +414,7 @@ func (c *volumeClient) findOrCreateVolume(
 
 		logger.Debug("found-created-volume")
 
-		return NewVolume(bcVolume, createdVolume), nil
+		return NewVolume(bcVolume, createdVolume, c), nil
 	}
 
 	if creatingVolume != nil {
@@ -488,5 +488,5 @@ func (c *volumeClient) findOrCreateVolume(
 
 	logger.Debug("created")
 
-	return NewVolume(bcVolume, createdVolume), nil
+	return NewVolume(bcVolume, createdVolume, c), nil
 }

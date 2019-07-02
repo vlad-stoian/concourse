@@ -1,11 +1,15 @@
 package worker
 
 import (
+	"code.cloudfoundry.org/garden"
 	"context"
 	"errors"
 	"fmt"
 	"github.com/concourse/concourse/atc"
+	"github.com/concourse/concourse/atc/exec"
 	"math/rand"
+	"path"
+	"strconv"
 	"time"
 
 	"code.cloudfoundry.org/clock"
@@ -14,6 +18,9 @@ import (
 )
 
 //go:generate counterfeiter . WorkerProvider
+
+const taskProcessID = "task"
+const taskExitStatusPropertyName = "concourse:exit-status"
 
 type WorkerProvider interface {
 	RunningWorkers(lager.Logger) ([]Worker, error)
@@ -66,6 +73,18 @@ type Pool interface {
 		WorkerSpec,
 	) (Worker, error)
 
+	RunTaskStep(
+		context.Context,
+		lager.Logger,
+		db.ContainerOwner,
+		ContainerSpec,
+		WorkerSpec,
+		ContainerPlacementStrategy,
+		ImageFetchingDelegate,
+		db.ContainerMetadata,
+		atc.VersionedResourceTypes,
+		atc.TaskConfig,
+	) (int, []VolumeMount, error)
 }
 
 type ClientTwo interface {
@@ -243,4 +262,129 @@ func (pool *pool) FindOrCreateContainer(
 		workerSpec,
 		resourceTypes,
 	)
+}
+
+func (pool *pool) RunTaskStep (
+	ctx context.Context,
+	logger lager.Logger,
+	owner db.ContainerOwner,
+	containerSpec ContainerSpec,
+	workerSpec WorkerSpec,
+	strategy ContainerPlacementStrategy,
+	delegate exec.TaskDelegate,
+	metadata db.ContainerMetadata,
+	resourceTypes atc.VersionedResourceTypes,
+	config atc.TaskConfig,
+) (int, []VolumeMount, error) {
+	chosenWorker, err := pool.FindOrChooseWorkerForContainer(
+		ctx,
+		logger,
+		owner,
+		containerSpec,
+		workerSpec,
+		strategy,
+	)
+	if err != nil {
+		return -1, []VolumeMount{}, err
+	}
+
+	container, err := chosenWorker.FindOrCreateContainer(
+		ctx,
+		logger,
+		delegate,
+		owner,
+		metadata,
+		containerSpec,
+		workerSpec,
+		resourceTypes,
+	)
+
+	if err != nil {
+		return -1, []VolumeMount{}, err
+	}
+
+	// container already exited
+	exitStatusProp, err := container.Property(taskExitStatusPropertyName)
+	if err == nil {
+		logger.Info("already-exited", lager.Data{"status": exitStatusProp})
+
+		status, err := strconv.Atoi(exitStatusProp)
+		if err != nil {
+			return -1, []VolumeMount{}, err
+		}
+
+		return status, container.VolumeMounts(), nil
+	}
+
+	processIO := garden.ProcessIO{
+		Stdout: delegate.Stdout(),
+		Stderr: delegate.Stderr(),
+	}
+
+	process, err := container.Attach(taskProcessID, processIO)
+	if err == nil {
+		logger.Info("already-running")
+	} else {
+		logger.Info("spawning")
+
+		delegate.Starting(logger, config)
+
+		process, err = container.Run(
+			garden.ProcessSpec{
+				ID: taskProcessID,
+
+				Path: config.Run.Path,
+				Args: config.Run.Args,
+
+				Dir: path.Join(metadata.WorkingDirectory, config.Run.Dir),
+
+				// Guardian sets the default TTY window size to width: 80, height: 24,
+				// which creates ANSI control sequences that do not work with other window sizes
+				TTY: &garden.TTYSpec{
+					WindowSize: &garden.WindowSize{Columns: 500, Rows: 500},
+				},
+			},
+			processIO,
+		)
+	}
+	if err != nil {
+		return -1, []VolumeMount{}, err
+	}
+
+	logger.Info("attached")
+
+	exited := make(chan struct{})
+	var processStatus int
+	var processErr error
+
+	go func() {
+		processStatus, processErr = process.Wait()
+		close(exited)
+	}()
+
+	select {
+	case <-ctx.Done():
+		err = container.Stop(false)
+		if err != nil {
+			logger.Error("stopping-container", err)
+		}
+
+		<-exited
+
+		return -1, []VolumeMount{}, ctx.Err()
+
+	case <-exited:
+		if processErr != nil {
+			return -1, []VolumeMount{}, processErr
+		}
+
+		delegate.Finished(logger, ExitStatus(processStatus))
+
+		err = container.SetProperty(taskExitStatusPropertyName, fmt.Sprintf("%d", processStatus))
+		if err != nil {
+			return -1, []VolumeMount{}, err
+		}
+
+		return processStatus, container.VolumeMounts(), nil
+	}
 }
