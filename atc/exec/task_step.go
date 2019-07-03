@@ -4,17 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/vito/houdini/process"
 	"io"
 	"path"
 	"path/filepath"
-	"strconv"
 	"strings"
 
-	"code.cloudfoundry.org/garden"
 	"code.cloudfoundry.org/lager"
 	"code.cloudfoundry.org/lager/lagerctx"
 	"github.com/cloudfoundry/bosh-cli/director/template"
+
 	"github.com/concourse/concourse/atc"
 	"github.com/concourse/concourse/atc/creds"
 	"github.com/concourse/concourse/atc/db"
@@ -189,43 +187,64 @@ func (step *TaskStep) Run(ctx context.Context, state RunState) error {
 
 	owner := db.NewBuildStepContainerOwner(step.metadata.BuildID, step.planID, step.metadata.TeamID)
 
-	status, volumeMounts, err := step.workerPool.RunTaskStep(
-		ctx,
-		logger,
-		owner,
-		containerSpec,
-		workerSpec,
-		step.strategy,
-		step.delegate,
-		step.containerMetadata,
-		resourceTypes,
-		config,
-	)
+	results := make(chan worker.ReturnValue)
+	events := make(chan string)
 
-	if err != nil {
-		return err
-	}
+	go func(results chan worker.ReturnValue) {
+		status, volumeMounts, err := step.workerPool.RunTaskStep(
+			ctx,
+			logger,
+			owner,
+			containerSpec,
+			workerSpec,
+			step.strategy,
+			step.delegate,
+			step.containerMetadata,
+			resourceTypes,
+			config,
+			events,
+		)
 
-
-	select {
-	case <-ctx.Done():
-		err = step.registerOutputs(logger, repository, config, container, step.containerMetadata)
-		if err != nil {
-			return err
+		results <- worker.ReturnValue{
+			Status: status,
+			VolumeMounts: volumeMounts,
+			Err: err,
 		}
 
-		return ctx.Err()
+	}(results)
 
-	default:
-		step.succeeded = (status == 0)
 
-		err = step.registerOutputs(logger, repository, config, container, step.containerMetadata)
-		if err != nil {
-			return err
+	for {
+		select {
+		case <-ctx.Done():
+			result := <-results
+			err = step.registerOutputs(logger, repository, config, result.VolumeMounts, step.containerMetadata)
+			if err != nil {
+				return err
+			}
+
+			return ctx.Err()
+
+		case result := <-results:
+			if err = result.Err; err != nil {
+				return err
+			}
+
+			step.succeeded = (result.Status == 0)
+			step.delegate.Finished(logger, ExitStatus(result.Status))
+
+			err = step.registerOutputs(logger, repository, config, result.VolumeMounts, step.containerMetadata)
+			if err != nil {
+				return err
+			}
+
+			return nil
+
+		case <-events:
+			step.delegate.Starting(logger, config)
 		}
-
-		return nil
 	}
+
 }
 
 func (step *TaskStep) Succeeded() bool {
@@ -357,9 +376,7 @@ func (step *TaskStep) workerSpec(logger lager.Logger, resourceTypes atc.Versione
 	return workerSpec, nil
 }
 
-func (step *TaskStep) registerOutputs(logger lager.Logger, repository *artifact.Repository, config atc.TaskConfig, container worker.Container, metadata db.ContainerMetadata) error {
-	volumeMounts := container.VolumeMounts()
-
+func (step *TaskStep) registerOutputs(logger lager.Logger, repository *artifact.Repository, config atc.TaskConfig, volumeMounts []worker.VolumeMount, metadata db.ContainerMetadata) error {
 	logger.Debug("registering-outputs", lager.Data{"outputs": config.Outputs})
 
 	for _, output := range config.Outputs {

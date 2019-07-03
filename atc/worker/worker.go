@@ -56,14 +56,6 @@ type Worker interface {
 	CreateVolume(logger lager.Logger, spec VolumeSpec, teamID int, volumeType db.VolumeType) (Volume, error)
 
 	GardenClient() garden.Client
-	InitializeTaskCache(
-		logger lager.Logger,
-		jobID int,
-		stepName string,
-		path string,
-		privileged bool,
-		volume Volume,
-	) error
 }
 
 type gardenWorker struct {
@@ -364,40 +356,6 @@ func (worker *gardenWorker) EnsureDBContainerExists(
 	logger.Debug("created-creating-container-in-db")
 
 	return nil
-}
-
-func (worker *gardenWorker) InitializeTaskCache(
-	logger lager.Logger,
-	jobID int,
-	stepName string,
-	path string,
-	privileged bool,
-	volume Volume,
-) error {
-	if volume.DBVolume().ParentHandle() == "" {
-		return volume.DBVolume().InitializeTaskCache(jobID, stepName, path)
-	}
-
-	logger.Debug("creating-an-import-volume", lager.Data{"path": volume.BCVolume().Path()})
-
-	// always create, if there are any existing task cache volumes they will be gced
-	// after initialization of the current one
-	importVolume, err := worker.volumeClient.CreateVolumeForTaskCache(
-		logger,
-		VolumeSpec{
-			Strategy:   baggageclaim.ImportStrategy{Path: volume.BCVolume().Path()},
-			Privileged: privileged,
-		},
-		volume.DBVolume().TeamID(),
-		jobID,
-		stepName,
-		path,
-	)
-	if err != nil {
-		return err
-	}
-
-	return worker.InitializeTaskCache(logger, jobID, stepName, path, privileged, importVolume)
 }
 
 func (worker *gardenWorker) fetchImageForContainer(

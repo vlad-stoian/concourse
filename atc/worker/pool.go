@@ -1,19 +1,21 @@
 package worker
 
 import (
-	"code.cloudfoundry.org/garden"
 	"context"
 	"errors"
 	"fmt"
-	"github.com/concourse/concourse/atc"
-	"github.com/concourse/concourse/atc/exec"
 	"math/rand"
 	"path"
 	"strconv"
 	"time"
 
+	"code.cloudfoundry.org/garden"
+
 	"code.cloudfoundry.org/clock"
 	"code.cloudfoundry.org/lager"
+
+	"github.com/concourse/concourse/atc"
+
 	"github.com/concourse/concourse/atc/db"
 )
 
@@ -21,6 +23,12 @@ import (
 
 const taskProcessID = "task"
 const taskExitStatusPropertyName = "concourse:exit-status"
+
+type ReturnValue struct {
+	Status       int
+	VolumeMounts []VolumeMount
+	Err error
+}
 
 type WorkerProvider interface {
 	RunningWorkers(lager.Logger) ([]Worker, error)
@@ -84,6 +92,7 @@ type Pool interface {
 		db.ContainerMetadata,
 		atc.VersionedResourceTypes,
 		atc.TaskConfig,
+		chan string,
 	) (int, []VolumeMount, error)
 }
 
@@ -229,6 +238,7 @@ func (pool *pool) FindOrChooseWorker(
 
 	return workers[rand.Intn(len(workers))], nil
 }
+
 func (pool *pool) FindOrCreateContainer(
 	ctx context.Context,
 	logger lager.Logger,
@@ -271,10 +281,11 @@ func (pool *pool) RunTaskStep (
 	containerSpec ContainerSpec,
 	workerSpec WorkerSpec,
 	strategy ContainerPlacementStrategy,
-	delegate exec.TaskDelegate,
+	delegate ImageFetchingDelegate,
 	metadata db.ContainerMetadata,
 	resourceTypes atc.VersionedResourceTypes,
 	config atc.TaskConfig,
+	events chan string,
 ) (int, []VolumeMount, error) {
 	chosenWorker, err := pool.FindOrChooseWorkerForContainer(
 		ctx,
@@ -327,7 +338,7 @@ func (pool *pool) RunTaskStep (
 	} else {
 		logger.Info("spawning")
 
-		delegate.Starting(logger, config)
+		events <- "Starting"
 
 		process, err = container.Run(
 			garden.ProcessSpec{
@@ -371,14 +382,12 @@ func (pool *pool) RunTaskStep (
 
 		<-exited
 
-		return -1, []VolumeMount{}, ctx.Err()
+		return -1, container.VolumeMounts(), ctx.Err()
 
 	case <-exited:
 		if processErr != nil {
 			return -1, []VolumeMount{}, processErr
 		}
-
-		delegate.Finished(logger, ExitStatus(processStatus))
 
 		err = container.SetProperty(taskExitStatusPropertyName, fmt.Sprintf("%d", processStatus))
 		if err != nil {
