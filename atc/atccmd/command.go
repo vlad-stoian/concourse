@@ -875,13 +875,13 @@ func (cmd *RunCommand) constructBackendMembers(
 				cmd.GlobalResourceCheckTimeout,
 				cmd.ResourceCheckingInterval,
 			),
-			10*time.Second,
+			time.Minute,
 			lidar.NewChecker(
 				logger.Session("lidar-checker"),
 				dbCheckFactory,
 				engine,
 			),
-			10*time.Minute,
+			30*time.Minute,
 			bus,
 		)
 	} else {
@@ -893,7 +893,7 @@ func (cmd *RunCommand) constructBackendMembers(
 				dbCheckFactory,
 				engine,
 			),
-			10*time.Minute,
+			time.Minute,
 			bus,
 		)
 	}
