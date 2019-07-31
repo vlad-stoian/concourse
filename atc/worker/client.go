@@ -35,7 +35,7 @@ type Client interface {
 		ContainerPlacementStrategy,
 		db.ContainerMetadata,
 		ImageFetcherSpec,
-		TaskProcessSpec,
+		ProcessSpec,
 		chan runtime.Event,
 	) TaskResult
 	RunPutStep(
@@ -73,7 +73,7 @@ type TaskResult struct {
 	Err          error
 }
 
-type TaskProcessSpec struct {
+type ProcessSpec struct {
 	Path         string
 	Args         []string
 	Dir          string
@@ -140,7 +140,7 @@ func (client *client) RunTaskStep(
 	strategy ContainerPlacementStrategy,
 	metadata db.ContainerMetadata,
 	imageSpec ImageFetcherSpec,
-	processSpec TaskProcessSpec,
+	processSpec ProcessSpec,
 	events chan runtime.Event,
 ) TaskResult {
 	chosenWorker, err := client.chooseTaskWorker(

@@ -188,7 +188,7 @@ func (step *TaskStep) Run(ctx context.Context, state RunState) error {
 		return err
 	}
 
-	processSpec := worker.TaskProcessSpec{
+	processSpec := worker.ProcessSpec{
 		Path:         config.Run.Path,
 		Args:         config.Run.Args,
 		Dir:          config.Run.Dir,
