@@ -7,8 +7,8 @@ import (
 	"github.com/concourse/concourse/atc/db/encryption"
 )
 
-func NewMigrations(db *sql.DB, es encryption.Strategy) *migrations {
-	return &migrations{db, es}
+func NewMigrations(es encryption.Strategy) *migrations {
+	return &migrations{Strategy: es}
 }
 
 type migrations struct {
@@ -16,7 +16,8 @@ type migrations struct {
 	encryption.Strategy
 }
 
-func (self *migrations) Run(name string) error {
+func (self *migrations) Run(db *sql.DB, name string) error {
+	self.DB = db
 
 	res := reflect.ValueOf(self).MethodByName(name).Call(nil)
 

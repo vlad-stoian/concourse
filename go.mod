@@ -49,6 +49,7 @@ require (
 	github.com/concourse/flag v1.0.0
 	github.com/concourse/go-archive v1.0.1
 	github.com/concourse/retryhttp v1.0.1
+	github.com/concourse/voyager v0.0.0-20190410193052-a7f228ba98c5
 	github.com/containerd/continuity v0.0.0-20180919190352-508d86ade3c2 // indirect
 	github.com/coreos/bbolt v1.3.2 // indirect
 	github.com/coreos/etcd v3.3.12+incompatible // indirect
@@ -141,7 +142,7 @@ require (
 	github.com/keybase/go-crypto v0.0.0-20180920171116-0b2a91ace448 // indirect
 	github.com/kr/pty v1.1.8
 	github.com/krishicks/yaml-patch v0.0.10
-	github.com/lib/pq v0.0.0-20181016162627-9eb73efc1fcc
+	github.com/lib/pq v1.0.0
 	github.com/mailru/easyjson v0.0.0-20180823135443-60711f1a8329 // indirect
 	github.com/mattbaird/elastigo v0.0.0-20170123220020-2fe47fd29e4b // indirect
 	github.com/mattn/go-colorable v0.1.1
@@ -223,3 +224,5 @@ require (
 	k8s.io/kube-openapi v0.0.0-20180731170545-e3762e86a74c // indirect
 	layeh.com/radius v0.0.0-20190101232339-d3a4fc175dc9 // indirect
 )
+
+replace github.com/concourse/voyager => /Users/pivotal/workspace/voyager

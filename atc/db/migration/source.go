@@ -4,13 +4,6 @@ import (
 	"github.com/gobuffalo/packr"
 )
 
-//go:generate counterfeiter . Bindata
-
-type Bindata interface {
-	AssetNames() []string
-	Asset(name string) ([]byte, error)
-}
-
 type packrSource struct {
 	packr.Box
 }
