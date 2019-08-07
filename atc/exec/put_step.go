@@ -81,8 +81,6 @@ func (step *PutStep) Run(ctx context.Context, state RunState) error {
 		"job-id":    step.metadata.JobID,
 	})
 
-	//step.delegate.Initializing(logger)
-
 	variables := creds.NewVariables(step.secrets, step.metadata.TeamName, step.metadata.PipelineName)
 
 	source, err := creds.NewSource(variables, step.plan.Source).Evaluate()
@@ -152,24 +150,21 @@ func (step *PutStep) Run(ctx context.Context, state RunState) error {
 
 
 	events := make(chan runtime.Event, 1)
-	//go func(logger lager.Logger, events chan runtime.Event, delegate PutDelegate) {
-	//	for {
-	//		ev := <-events
-	//		switch {
-	//		case ev.EventType == runtime.InitializingEvent:
-	//			step.delegate.Initializing(logger)
-	//
-	//		case ev.EventType == runtime.StartingEvent:
-	//			step.delegate.Starting(logger)
-	//
-	//		case ev.EventType == runtime.FinishedEvent:
-	//			step.delegate.Finished(logger, ExitStatus(ev.ExitStatus))
-	//
-	//		default:
-	//			return
-	//		}
-	//	}
-	//}(logger, events, step.delegate)
+	go func(logger lager.Logger, events chan runtime.Event, delegate PutDelegate) {
+		for {
+			ev := <-events
+			switch {
+			case ev.EventType == runtime.InitializingEvent:
+				step.delegate.Initializing(logger)
+
+			case ev.EventType == runtime.StartingEvent:
+				step.delegate.Starting(logger)
+
+			default:
+				return
+			}
+		}
+	}(logger, events, step.delegate)
 
 	step.delegate.Initializing(logger)
 
@@ -187,9 +182,11 @@ func (step *PutStep) Run(ctx context.Context, state RunState) error {
 		step.containerMetadata,
 		imageSpec,
 		resourceDir,
-		runtime.IOConfig{
-			Stdout: step.delegate.Stdout(),
-			Stderr: step.delegate.Stderr(),
+		worker.ProcessSpec{
+			Path: "/opt/resource/out",
+			Args: []string{resourceDir},
+			StdoutWriter: step.delegate.Stdout(),
+			StderrWriter: step.delegate.Stderr(),
 		},
 		events,
 	)
@@ -197,37 +194,7 @@ func (step *PutStep) Run(ctx context.Context, state RunState) error {
 	versionResult := result.VersionResult
 	err = result.Err
 
-	//chosenWorker, err := step.pool.FindOrChooseWorkerForContainer(
-	//	ctx,
-	//	logger,
-	//	owner,
-	//	containerSpec,
-	//	workerSpec,
-	//	step.strategy,
-	//)
-	//if err != nil {
-	//	return err
-	//}
-	//
-	//containerSpec.BindMounts = []worker.BindMountSource{
-	//	&worker.CertsVolumeMount{Logger: logger},
-	//}
-	//
-	//container, err := chosenWorker.FindOrCreateContainer(
-	//	ctx,
-	//	logger,
-	//	step.delegate,
-	//	owner,
-	//	step.containerMetadata,
-	//	containerSpec,
-	//	resourceTypes,
-	//)
-	//if err != nil {
-	//	return err
-	//}
-	//
-	//step.delegate.Starting(logger)
-	//
+	//	TODO: Add in code to actually use the resource interface. Example here:
 	//putResource := step.resourceFactory.NewResourceForContainer(container)
 	//versionResult, err := putResource.Put(
 	//	ctx,
