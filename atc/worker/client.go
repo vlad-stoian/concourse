@@ -469,6 +469,5 @@ func (client *client) RunPutStep(
 	} else {
 		result = PutResult{0, vr, nil}
 	}
-
 	return result
 }
