@@ -9,6 +9,7 @@ import Char
 import Colors
 import Common exposing (defineHoverBehaviour, isColorWithStripes)
 import Concourse exposing (BuildPrepStatus(..))
+import Concourse.BuildStatus exposing (BuildStatus(..))
 import Concourse.Pagination exposing (Direction(..))
 import DashboardTests exposing (iconSelector, middleGrey)
 import Dict
@@ -77,7 +78,7 @@ all =
                         , pipelineName = "pipeline"
                         , jobName = "job"
                         }
-                , status = Concourse.BuildStatusSucceeded
+                , status = BuildStatusSucceeded
                 , duration =
                     { startedAt = Just <| Time.millisToPosix 0
                     , finishedAt = Just <| Time.millisToPosix 0
@@ -95,7 +96,7 @@ all =
                         , pipelineName = "pipeline"
                         , jobName = "job"
                         }
-                , status = Concourse.BuildStatusStarted
+                , status = BuildStatusStarted
                 , duration =
                     { startedAt = Just <| Time.millisToPosix 0
                     , finishedAt = Just <| Time.millisToPosix 0
@@ -110,7 +111,7 @@ all =
                         Ok ( 1, theBuild )
 
             fetchBuildWithStatus :
-                Concourse.BuildStatus
+                BuildStatus
                 -> Application.Model
                 -> Application.Model
             fetchBuildWithStatus status =
@@ -264,7 +265,7 @@ all =
                                             , pipelineName = "p"
                                             , jobName = "j"
                                             }
-                                  , status = Concourse.BuildStatusStarted
+                                  , status = BuildStatusStarted
                                   , duration =
                                         { startedAt = Nothing
                                         , finishedAt = Nothing
@@ -362,7 +363,7 @@ all =
                                             , pipelineName = "p"
                                             , jobName = "j"
                                             }
-                                  , status = Concourse.BuildStatusStarted
+                                  , status = BuildStatusStarted
                                   , duration =
                                         { startedAt = Nothing
                                         , finishedAt = Nothing
@@ -437,7 +438,7 @@ all =
                                             , pipelineName = "p"
                                             , jobName = "j"
                                             }
-                                  , status = Concourse.BuildStatusStarted
+                                  , status = BuildStatusStarted
                                   , duration =
                                         { startedAt = Nothing
                                         , finishedAt = Nothing
@@ -512,7 +513,7 @@ all =
                                             , pipelineName = "p"
                                             , jobName = "j"
                                             }
-                                  , status = Concourse.BuildStatusStarted
+                                  , status = BuildStatusStarted
                                   , duration =
                                         { startedAt = Nothing
                                         , finishedAt = Nothing
@@ -599,7 +600,7 @@ all =
                         , fragment = Just "Lstepid:1"
                         }
                         |> Tuple.first
-                        |> fetchBuildWithStatus Concourse.BuildStatusFailed
+                        |> fetchBuildWithStatus BuildStatusFailed
                         |> Application.view
                         |> .title
                         |> Expect.equal "#1 - Concourse"
@@ -640,7 +641,7 @@ all =
                                             , pipelineName = "pipeline"
                                             , jobName = "job"
                                             }
-                                  , status = Concourse.BuildStatusSucceeded
+                                  , status = BuildStatusSucceeded
                                   , duration =
                                         { startedAt = buildTime
                                         , finishedAt = buildTime
@@ -695,7 +696,7 @@ all =
                                             , pipelineName = "pipeline"
                                             , jobName = "job"
                                             }
-                                  , status = Concourse.BuildStatusAborted
+                                  , status = BuildStatusAborted
                                   , duration =
                                         { startedAt = Nothing
                                         , finishedAt = Just <| Time.millisToPosix 0
@@ -741,7 +742,7 @@ all =
                                             , pipelineName = "pipeline"
                                             , jobName = "job"
                                             }
-                                  , status = Concourse.BuildStatusPending
+                                  , status = BuildStatusPending
                                   , duration =
                                         { startedAt = Nothing
                                         , finishedAt = Nothing
@@ -795,7 +796,7 @@ all =
                                 , { id = 1
                                   , name = "1"
                                   , job = Nothing
-                                  , status = Concourse.BuildStatusStarted
+                                  , status = BuildStatusStarted
                                   , duration =
                                         { startedAt = Nothing
                                         , finishedAt = Nothing
@@ -856,7 +857,7 @@ all =
                                 , { id = 1
                                   , name = "1"
                                   , job = Nothing
-                                  , status = Concourse.BuildStatusStarted
+                                  , status = BuildStatusStarted
                                   , duration =
                                         { startedAt =
                                             Just <| Time.millisToPosix 0
@@ -1392,42 +1393,42 @@ all =
                 [ test "pending build has grey banner" <|
                     \_ ->
                         pageLoadJobBuild
-                            |> fetchBuildWithStatus Concourse.BuildStatusPending
+                            |> fetchBuildWithStatus BuildStatusPending
                             |> Common.queryView
                             |> Query.find [ id "build-header" ]
                             |> Query.has [ style "background" "#9b9b9b" ]
                 , test "started build has yellow banner" <|
                     \_ ->
                         pageLoadJobBuild
-                            |> fetchBuildWithStatus Concourse.BuildStatusStarted
+                            |> fetchBuildWithStatus BuildStatusStarted
                             |> Common.queryView
                             |> Query.find [ id "build-header" ]
                             |> Query.has [ style "background" "#f1c40f" ]
                 , test "succeeded build has green banner" <|
                     \_ ->
                         pageLoadJobBuild
-                            |> fetchBuildWithStatus Concourse.BuildStatusSucceeded
+                            |> fetchBuildWithStatus BuildStatusSucceeded
                             |> Common.queryView
                             |> Query.find [ id "build-header" ]
                             |> Query.has [ style "background" "#11c560" ]
                 , test "failed build has red banner" <|
                     \_ ->
                         pageLoadJobBuild
-                            |> fetchBuildWithStatus Concourse.BuildStatusFailed
+                            |> fetchBuildWithStatus BuildStatusFailed
                             |> Common.queryView
                             |> Query.find [ id "build-header" ]
                             |> Query.has [ style "background" "#ed4b35" ]
                 , test "errored build has amber banner" <|
                     \_ ->
                         pageLoadJobBuild
-                            |> fetchBuildWithStatus Concourse.BuildStatusErrored
+                            |> fetchBuildWithStatus BuildStatusErrored
                             |> Common.queryView
                             |> Query.find [ id "build-header" ]
                             |> Query.has [ style "background" "#f5a623" ]
                 , test "aborted build has brown banner" <|
                     \_ ->
                         pageLoadJobBuild
-                            |> fetchBuildWithStatus Concourse.BuildStatusAborted
+                            |> fetchBuildWithStatus BuildStatusAborted
                             |> Common.queryView
                             |> Query.find [ id "build-header" ]
                             |> Query.has [ style "background" "#8b572a" ]
@@ -1436,7 +1437,7 @@ all =
                 [ test "pending build has grey tab in build history" <|
                     \_ ->
                         pageLoadJobBuild
-                            |> fetchBuildWithStatus Concourse.BuildStatusPending
+                            |> fetchBuildWithStatus BuildStatusPending
                             |> Common.queryView
                             |> Query.find [ id "builds" ]
                             |> Query.find [ tag "li" ]
@@ -1444,7 +1445,7 @@ all =
                 , test "started build has animated striped yellow tab in build history" <|
                     \_ ->
                         pageLoadJobBuild
-                            |> fetchBuildWithStatus Concourse.BuildStatusStarted
+                            |> fetchBuildWithStatus BuildStatusStarted
                             |> Common.queryView
                             |> Query.find [ id "builds" ]
                             |> Query.find [ tag "li" ]
@@ -1452,7 +1453,7 @@ all =
                 , test "succeeded build has green tab in build history" <|
                     \_ ->
                         pageLoadJobBuild
-                            |> fetchBuildWithStatus Concourse.BuildStatusSucceeded
+                            |> fetchBuildWithStatus BuildStatusSucceeded
                             |> Common.queryView
                             |> Query.find [ id "builds" ]
                             |> Query.find [ tag "li" ]
@@ -1460,7 +1461,7 @@ all =
                 , test "failed build has red tab in build history" <|
                     \_ ->
                         pageLoadJobBuild
-                            |> fetchBuildWithStatus Concourse.BuildStatusFailed
+                            |> fetchBuildWithStatus BuildStatusFailed
                             |> Common.queryView
                             |> Query.find [ id "builds" ]
                             |> Query.find [ tag "li" ]
@@ -1468,7 +1469,7 @@ all =
                 , test "errored build has amber tab in build history" <|
                     \_ ->
                         pageLoadJobBuild
-                            |> fetchBuildWithStatus Concourse.BuildStatusErrored
+                            |> fetchBuildWithStatus BuildStatusErrored
                             |> Common.queryView
                             |> Query.find [ id "builds" ]
                             |> Query.find [ tag "li" ]
@@ -1476,7 +1477,7 @@ all =
                 , test "aborted build has brown tab in build history" <|
                     \_ ->
                         pageLoadJobBuild
-                            |> fetchBuildWithStatus Concourse.BuildStatusAborted
+                            |> fetchBuildWithStatus BuildStatusAborted
                             |> Common.queryView
                             |> Query.find [ id "builds" ]
                             |> Query.find [ tag "li" ]
@@ -1546,7 +1547,7 @@ all =
                                                     , pipelineName = "pipeline"
                                                     , jobName = "job"
                                                     }
-                                          , status = Concourse.BuildStatusSucceeded
+                                          , status = BuildStatusSucceeded
                                           , duration =
                                                 { startedAt = Just <| Time.millisToPosix 0
                                                 , finishedAt = Just <| Time.millisToPosix 0
@@ -1595,7 +1596,7 @@ all =
                                                     , pipelineName = "pipeline"
                                                     , jobName = "job"
                                                     }
-                                          , status = Concourse.BuildStatusSucceeded
+                                          , status = BuildStatusSucceeded
                                           , duration =
                                                 { startedAt = Just <| Time.millisToPosix 0
                                                 , finishedAt = Just <| Time.millisToPosix 0
@@ -1641,7 +1642,7 @@ all =
                                                     , pipelineName = "pipeline"
                                                     , jobName = "job"
                                                     }
-                                          , status = Concourse.BuildStatusSucceeded
+                                          , status = BuildStatusSucceeded
                                           , duration =
                                                 { startedAt = Just <| Time.millisToPosix 0
                                                 , finishedAt = Just <| Time.millisToPosix 0
@@ -1798,7 +1799,7 @@ all =
                                                     , pipelineName = "pipeline"
                                                     , jobName = "job"
                                                     }
-                                          , status = Concourse.BuildStatusSucceeded
+                                          , status = BuildStatusSucceeded
                                           , duration =
                                                 { startedAt = Nothing
                                                 , finishedAt = Nothing
@@ -1912,7 +1913,7 @@ all =
                                                     , pipelineName = "pipeline"
                                                     , jobName = "job"
                                                     }
-                                          , status = Concourse.BuildStatusSucceeded
+                                          , status = BuildStatusSucceeded
                                           , duration =
                                                 { startedAt = Nothing
                                                 , finishedAt = Nothing
@@ -2066,7 +2067,7 @@ all =
             let
                 givenBuildStarted _ =
                     pageLoadJobBuild
-                        |> fetchBuildWithStatus Concourse.BuildStatusStarted
+                        |> fetchBuildWithStatus BuildStatusStarted
                         |> fetchHistory
                         |> Tuple.first
                         |> fetchJobDetails
@@ -2905,7 +2906,7 @@ all =
                                             eventsUrl
                                       , data =
                                             STModels.BuildStatus
-                                                Concourse.BuildStatusFailed
+                                                BuildStatusFailed
                                                 (Time.millisToPosix 0)
                                       }
                                     ]
@@ -3123,7 +3124,7 @@ all =
                                     , { url = eventsUrl
                                       , data =
                                             STModels.BuildStatus
-                                                Concourse.BuildStatusAborted
+                                                BuildStatusAborted
                                                 (Time.millisToPosix 0)
                                       }
                                     ]
@@ -3148,7 +3149,7 @@ all =
                                     [ { url = eventsUrl
                                       , data =
                                             STModels.BuildStatus
-                                                Concourse.BuildStatusAborted
+                                                BuildStatusAborted
                                                 (Time.millisToPosix 0)
                                       }
                                     ]
@@ -3345,7 +3346,7 @@ all =
                                                     , pipelineName = "p"
                                                     , jobName = "j"
                                                     }
-                                          , status = Concourse.BuildStatusStarted
+                                          , status = BuildStatusStarted
                                           , duration =
                                                 { startedAt = Nothing
                                                 , finishedAt = Nothing
@@ -3497,7 +3498,7 @@ threeBuildEvents =
                     , { id = 1
                       , name = "1"
                       , job = Nothing
-                      , status = Concourse.BuildStatusStarted
+                      , status = BuildStatusStarted
                       , duration =
                             { startedAt =
                                 Just <| Time.millisToPosix 0

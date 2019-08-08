@@ -3,6 +3,7 @@ module ResourceTests exposing (all)
 import Application.Application as Application
 import Common exposing (defineHoverBehaviour, queryView)
 import Concourse
+import Concourse.BuildStatus exposing (BuildStatus(..))
 import Concourse.Pagination exposing (Direction(..))
 import DashboardTests
     exposing
@@ -302,7 +303,7 @@ all =
                                             , pipelineName = pipelineName
                                             , jobName = "some-job"
                                             }
-                                    , status = Concourse.BuildStatusSucceeded
+                                    , status = BuildStatusSucceeded
                                     , duration =
                                         { startedAt = Nothing
                                         , finishedAt = Nothing
@@ -340,7 +341,7 @@ all =
                                             , pipelineName = pipelineName
                                             , jobName = "some-job"
                                             }
-                                    , status = Concourse.BuildStatusSucceeded
+                                    , status = BuildStatusSucceeded
                                     , duration =
                                         { startedAt = Nothing
                                         , finishedAt = Nothing
