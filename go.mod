@@ -224,5 +224,3 @@ require (
 	k8s.io/kube-openapi v0.0.0-20180731170545-e3762e86a74c // indirect
 	layeh.com/radius v0.0.0-20190101232339-d3a4fc175dc9 // indirect
 )
-
-replace github.com/concourse/voyager => /Users/pivotal/workspace/voyager

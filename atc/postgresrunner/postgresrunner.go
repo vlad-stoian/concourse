@@ -102,7 +102,7 @@ func (runner *Runner) MigrateToVersion(version int) {
 		runner.DataSourceName(),
 		nil,
 		encryption.NewNoEncryption(),
-	).MigrateToVersion(version)
+	).MigrateToVersion(lagertest.NewTestLogger("postgres-runner"), version)
 	Expect(err).NotTo(HaveOccurred())
 }
 
@@ -112,7 +112,7 @@ func (runner *Runner) TryOpenDBAtVersion(version int) (*sql.DB, error) {
 		runner.DataSourceName(),
 		nil,
 		encryption.NewNoEncryption(),
-	).OpenAtVersion(version)
+	).OpenAtVersion(lagertest.NewTestLogger("postgres-runner"),version)
 
 	if err != nil {
 		return nil, err
@@ -137,7 +137,7 @@ func (runner *Runner) OpenDB() *sql.DB {
 		runner.DataSourceName(),
 		nil,
 		encryption.NewNoEncryption(),
-	).Open()
+	).Open(lagertest.NewTestLogger("postgres-runner"))
 	Expect(err).NotTo(HaveOccurred())
 
 	// only allow one connection so that we can detect any code paths that
