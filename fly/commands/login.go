@@ -229,7 +229,6 @@ func checkTokenTeams(tokenValue string, loginTeam string) error {
 	if err := json.Unmarshal(rawData, &payload); err != nil {
 		return err
 	}
-
 	var teamNames []string
 	teamRoles := map[string][]string{}
 	if err := mapstructure.Decode(payload["teams"], &teamRoles); err == nil {
@@ -238,6 +237,10 @@ func checkTokenTeams(tokenValue string, loginTeam string) error {
 		}
 	} else if err := mapstructure.Decode(payload["teams"], &teamNames); err != nil {
 		return err
+	}
+
+	if isAdmin, isAdminExistsInToken := payload["is_admin"]; isAdminExistsInToken && isAdmin.(bool) {
+		return nil
 	}
 
 	for _, team := range teamNames {
