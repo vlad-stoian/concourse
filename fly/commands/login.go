@@ -132,7 +132,49 @@ func (command *LoginCommand) Execute(args []string) error {
 
 	err = checkTokenTeams(tokenValue, command.TeamName)
 	if err != nil {
-		return err
+		payload, unmarshalErr := unmarshalToken(tokenValue)
+		if nil != unmarshalErr {
+			return unmarshalErr
+		}
+		if nil == payload {
+			return err
+		}
+		userName, _ := payload["user_name"].(string)
+		errDescription := fmt.Sprintf("user [%s] is not in team [%s]", userName, command.TeamName)
+		if errDescription == err.Error() && isAdmin(payload) {
+			target, err := rc.NewAuthenticatedTarget(
+				Fly.Target,
+				command.ATCURL,
+				command.TeamName,
+				command.Insecure,
+				&rc.TargetToken{
+					Type: tokenType,
+					Value: tokenValue,
+				},
+				caCert,
+				Fly.Verbose,
+				)
+			if err != nil {
+				return err
+			}
+			teams, err := target.Client().ListTeams()
+			if err != nil {
+				return err
+			}
+
+			teamExist := false
+			for _, team := range teams {
+				if command.TeamName == team.Name {
+					teamExist = true
+					break
+				}
+			}
+			if !teamExist {
+				return errors.New(errDescription)
+			}
+		} else {
+			return err
+		}
 	}
 
 	return command.saveTarget(
@@ -214,21 +256,42 @@ func (command *LoginCommand) authCodeGrant(targetUrl string, browserOnly bool) (
 	return segments[0], segments[1], nil
 }
 
-func checkTokenTeams(tokenValue string, loginTeam string) error {
+func unmarshalToken(tokenValue string) (map[string]interface{}, error) {
 	tokenContents := strings.Split(tokenValue, ".")
 	if len(tokenContents) < 2 {
-		return nil
+		return nil, nil
 	}
 
 	rawData, err := base64.StdEncoding.WithPadding(base64.NoPadding).DecodeString(tokenContents[1])
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	var payload map[string]interface{}
 	if err := json.Unmarshal(rawData, &payload); err != nil {
-		return err
+		return nil, err
 	}
+	return payload, nil
+}
+
+func isAdmin(payload map[string]interface{}) bool {
+	if isAdmin, isAdminExistsInToken := payload["is_admin"]; isAdminExistsInToken && isAdmin.(bool) {
+		return true
+	} else {
+		return false
+	}
+}
+
+func checkTokenTeams(tokenValue string, loginTeam string) error {
+	payload, unmarshalErr := unmarshalToken(tokenValue)
+	if nil != unmarshalErr {
+		return unmarshalErr
+	}
+
+	if nil == payload {
+		return nil
+	}
+
 	var teamNames []string
 	teamRoles := map[string][]string{}
 	if err := mapstructure.Decode(payload["teams"], &teamRoles); err == nil {
@@ -237,10 +300,6 @@ func checkTokenTeams(tokenValue string, loginTeam string) error {
 		}
 	} else if err := mapstructure.Decode(payload["teams"], &teamNames); err != nil {
 		return err
-	}
-
-	if isAdmin, isAdminExistsInToken := payload["is_admin"]; isAdminExistsInToken && isAdmin.(bool) {
-		return nil
 	}
 
 	for _, team := range teamNames {

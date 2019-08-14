@@ -182,6 +182,7 @@ var _ = Describe("login Command", func() {
 
 		Context("when the token is given", func() {
 			var encodedString string
+			var existedTeamName string = "some-team"
 			JustBeforeEach(func(){
 				Expect(encodedString).NotTo(Equal(""))
 				encodedToken := base64.StdEncoding.WithPadding(base64.NoPadding).EncodeToString([]byte(encodedString))
@@ -195,6 +196,16 @@ var _ = Describe("login Command", func() {
 								"token_type":   "Bearer",
 								"access_token": "foo." + encodedToken,
 							},
+						),
+					),
+					ghttp.CombineHandlers(
+						ghttp.VerifyRequest("GET", "/api/v1/teams"),
+						ghttp.RespondWithJSONEncoded(200, []atc.Team {
+							atc.Team{
+								ID: 1,
+								Name: existedTeamName,
+							},
+						},
 						),
 					),
 				)
@@ -230,13 +241,30 @@ var _ = Describe("login Command", func() {
 					"is_admin": true
 				}`
 				})
-
-				It("fails", func() {
-					sess := flyLogin()
-					<-sess.Exited
-					Expect(sess.ExitCode()).To(Equal(0))
-					Expect(sess.Out).Should(gbytes.Say("target saved"))
+				Context("the team does exist", func() {
+					It("success", func() {
+						sess := flyLogin()
+						<-sess.Exited
+						Expect(sess.ExitCode()).To(Equal(0))
+						Expect(sess.Out).Should(gbytes.Say("target saved"))
+					})
+					BeforeEach(func() {
+						existedTeamName = "some-team"
+					})
 				})
+
+				Context("the team does NOT exist", func() {
+					It("fails", func() {
+						sess := flyLogin()
+						<-sess.Exited
+						Expect(sess.ExitCode()).NotTo(Equal(0))
+						Eventually(sess.Err).Should(gbytes.Say("error: user \\[test\\] is not in team \\[some-team\\]"))
+					})
+					BeforeEach(func() {
+						existedTeamName = "some-other-existed-team"
+					})
+				})
+
 			})
 
 			Context("when the token's (legacy) team list doesn't include the team", func() {
